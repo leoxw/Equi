@@ -9,8 +9,29 @@ struct ContentView: View {
         VStack(spacing: 0) {
             EditorToolbar()
             Divider()
-            WebViewBridge(document: document, commands: commands)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ZStack {
+                WebViewBridge(document: document, commands: commands)
+                    .frame(minWidth: 400, minHeight: 300)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .layoutPriority(1)
+
+                if !document.isEditorReady {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                        Text("正在加载编辑器…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text("若超过 3 秒仍空白，请确认已 git pull 并运行 ./scripts/bootstrap-xcode.sh")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.ultraThinMaterial)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             statusBar
         }
         .navigationTitle(document.windowTitle)
