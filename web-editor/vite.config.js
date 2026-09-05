@@ -11,6 +11,8 @@ export default defineConfig({
     assetsDir: 'assets',
     sourcemap: false,
     cssCodeSplit: false,
+    // CodeMirror + TipTap 同包离线加载，单包 ~900KB 属预期
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       input: path.resolve(__dirname, 'index.html'),
       output: {
