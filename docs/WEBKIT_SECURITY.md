@@ -48,7 +48,9 @@ config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
 
 用户 Markdown 文件通过 `NSOpenPanel` / `NSSavePanel` 获得 security-scoped 访问；**不要**把用户文档目录传给 `allowingReadAccessTo`。
 
-加载方式：Editor 为**全内联** `index.html`，Swift 使用 `loadHTMLString(_:baseURL: nil)`。不要再传 `Editor/` 目录作 baseURL——否则 WebContent 进程会尝试打开本地路径，控制台出现 `Couldn't open <private>`，脚本可能起不来。
+加载方式：Editor 为**全内联** HTML，Swift 使用 `loadHTMLString(_:baseURL: nil)`。不要再传 `Editor/` 目录作 baseURL——否则 WebContent 进程会尝试打开本地路径，控制台出现 `Couldn't open <private>`，脚本可能起不来。
+
+资源查找**只允许 App Bundle 内路径**（优先根级 `EquiEditor.html`，其次 `Editor/index.html`）。禁止回退到 `#file` 源码目录——沙盒下 `fileExists` 可能为 true，但真正读取会报「没有查看权限」。
 
 ## 4. 内容安全策略（CSP）
 

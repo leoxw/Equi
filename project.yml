@@ -31,8 +31,12 @@ targets:
           - Info.plist
           - "*.entitlements"
     resources:
+      # 文件夹引用：保留 Editor/ 目录结构
       - path: Equi/Resources/Editor
         type: folder
+        buildPhase: resources
+      # 扁平单文件兜底：沙盒 App 读自己 Bundle 根级资源最稳妥
+      - path: Equi/Resources/EquiEditor.html
         buildPhase: resources
       - path: Equi/Supporting/Assets.xcassets
     settings:

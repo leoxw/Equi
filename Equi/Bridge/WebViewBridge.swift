@@ -139,24 +139,36 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         guard !didStartLoad else { return }
         didStartLoad = true
 
-        guard let editorDir = Self.resolveEditorDirectory() else {
+        guard let indexURL = Self.resolveEditorHTMLURL() else {
             let listing = Self.resourceListing()
             showError(
                 in: webView,
                 title: "Editor Bundle 未找到",
                 detail: """
-                未找到 <code>Editor/index.html</code>。<br/><br/>
+                未在 App Bundle 内找到编辑器 HTML。<br/><br/>
+                已尝试：<br/>
+                • <code>EquiEditor.html</code>（根级）<br/>
+                • <code>Editor/index.html</code><br/><br/>
                 Bundle Resources：<br/><code>\(Bundle.main.resourcePath ?? "?")</code><br/><br/>
                 内容：<br/><pre style="white-space:pre-wrap;font-size:11px">\(listing)</pre>
-                <p>请运行 <code>./scripts/bootstrap-xcode.sh</code> 后 Clean + Run。</p>
+                <p>请运行 <code>./scripts/bootstrap-xcode.sh</code> 后 <b>Clean Build Folder</b> 再 Run。<br/>
+                （不要用源码目录路径；沙盒 App 读不了工程外文件。）</p>
                 """
             )
             return
         }
 
-        let indexURL = editorDir.appendingPathComponent("index.html")
         do {
-            var html = try String(contentsOf: indexURL, encoding: .utf8)
+            // 只读 Bundle 内文件；用 Data 再解码，错误信息更清晰
+            let data = try Data(contentsOf: indexURL, options: [.mappedIfSafe])
+            guard var html = String(data: data, encoding: .utf8), !html.isEmpty else {
+                showError(
+                    in: webView,
+                    title: "index.html 内容无效",
+                    detail: "路径：<code>\(indexURL.path)</code><br/>字节：\(data.count)"
+                )
+                return
+            }
             if !html.contains("data-equi-probe") {
                 html = html.replacingOccurrences(
                     of: "<body>",
@@ -169,15 +181,25 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             #if DEBUG
             print("[Equi] loadHTMLString", indexURL.path, "bytes=", html.utf8.count, "bounds=", webView.bounds)
             #endif
-            // 全部内联后不要带 file baseURL，否则 WebContent 会去打开本地路径并报 Couldn't open <private>
+            // 全内联 HTML：baseURL 必须为 nil，避免 WebContent 打开本地路径
             webView.loadHTMLString(html, baseURL: nil)
-            startReadyWatchdog(on: webView, editorDir: editorDir)
+            startReadyWatchdog(on: webView, indexURL: indexURL)
         } catch {
-            showError(in: webView, title: "无法读取 index.html", detail: error.localizedDescription)
+            showError(
+                in: webView,
+                title: "无法读取编辑器 HTML",
+                detail: """
+                \(error.localizedDescription)<br/><br/>
+                路径：<code>\(indexURL.path)</code><br/>
+                位于 Bundle 内：<code>\(Self.isInsideAppBundle(indexURL) ? "是" : "否")</code><br/><br/>
+                若显示「没有查看权限」：说明读到了沙盒外路径。请 Clean Build Folder，
+                确认 Copy Bundle Resources 含 <code>EquiEditor.html</code> / <code>Editor</code>。
+                """
+            )
         }
     }
 
-    private func startReadyWatchdog(on webView: WKWebView, editorDir: URL) {
+    private func startReadyWatchdog(on webView: WKWebView, indexURL: URL) {
         readyWatchdog?.cancel()
         let work = DispatchWorkItem { [weak self, weak webView] in
             guard let self, let webView, !self.editorDidLoad else { return }
@@ -192,8 +214,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                     return
                 }
                 let indexSize: String = {
-                    let u = editorDir.appendingPathComponent("index.html")
-                    guard let attrs = try? FileManager.default.attributesOfItem(atPath: u.path),
+                    guard let attrs = try? FileManager.default.attributesOfItem(atPath: indexURL.path),
                           let size = attrs[.size] as? NSNumber else { return "?" }
                     return "\(size.intValue) bytes"
                 }()
@@ -203,11 +224,11 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                     title: "编辑器脚本未启动",
                     detail: """
                     HTML 已注入，但 <code>EditorAPI</code> 未就绪。<br/>
-                    index.html：<code>\(indexSize)</code>（内联后应 &gt; 500KB）<br/>
+                    HTML：<code>\(indexSize)</code>（内联后应 &gt; 500KB）<br/>
                     收到 html-inline-exec：<code>\(htmlExec)</code><br/>
                     WebView bounds：<code>\(Int(webView.bounds.width))×\(Int(webView.bounds.height))</code><br/>
-                    路径：<code>\(editorDir.path)</code><br/><br/>
-                    请 Clean Build Folder 后重跑；确认 Target 含 <code>Resources/Editor</code>。
+                    路径：<code>\(indexURL.path)</code><br/><br/>
+                    请 Clean Build Folder 后重跑。
                     """
                 )
             }
@@ -216,27 +237,47 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
 
-    private static func resolveEditorDirectory() -> URL? {
+    /// 仅解析 App Bundle 内的 HTML，绝不回退到 `#file` 源码路径（沙盒会报「没有查看权限」）。
+    private static func resolveEditorHTMLURL() -> URL? {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+
+        // 1) 根级扁平文件（最稳）
+        if let url = Bundle.main.url(forResource: "EquiEditor", withExtension: "html") {
+            candidates.append(url)
+        }
+        // 2) Editor/index.html
         if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Editor") {
-            return url.deletingLastPathComponent()
+            candidates.append(url)
         }
+        // 3) 直接拼 ResourcePath
         if let res = Bundle.main.resourceURL {
-            let dir = res.appendingPathComponent("Editor")
-            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("index.html").path) {
-                return dir
-            }
+            candidates.append(res.appendingPathComponent("EquiEditor.html"))
+            candidates.append(res.appendingPathComponent("Editor/index.html"))
         }
+        // 4) 根级 index.html
         if let url = Bundle.main.url(forResource: "index", withExtension: "html") {
-            return url.deletingLastPathComponent()
+            candidates.append(url)
         }
-        let dev = URL(fileURLWithPath: #file)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Resources/Editor")
-        if FileManager.default.fileExists(atPath: dev.appendingPathComponent("index.html").path) {
-            return dev
+
+        for url in candidates {
+            guard isInsideAppBundle(url) else { continue }
+            guard fm.fileExists(atPath: url.path) else { continue }
+            guard fm.isReadableFile(atPath: url.path) else { continue }
+            return url
         }
         return nil
+    }
+
+    private static func isInsideAppBundle(_ url: URL) -> Bool {
+        let path = url.resolvingSymlinksInPath().path
+        let bundlePath = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        if path.hasPrefix(bundlePath) { return true }
+        if let res = Bundle.main.resourceURL?.resolvingSymlinksInPath().path,
+           path.hasPrefix(res) {
+            return true
+        }
+        return false
     }
 
     private static func resourceListing() -> String {
