@@ -44,7 +44,7 @@ config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
 
 - `com.apple.security.app-sandbox = true`
 - `com.apple.security.files.user-selected.read-write = true`（Open/Save Panel）
-- **不**开启 `network.client`（编辑器无需出网）
+- `com.apple.security.network.client = true`（**必需**：沙盒下 WKWebView 依赖 WebContent 进程 IPC；关闭时常见「工具栏正常、中间全黑」。App 本身仍不主动出网，CSP/`connect-src` 也保持收紧）
 
 用户 Markdown 文件通过 `NSOpenPanel` / `NSSavePanel` 获得 security-scoped 访问；**不要**把用户文档目录传给 `allowingReadAccessTo`。
 

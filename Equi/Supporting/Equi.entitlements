@@ -7,8 +7,11 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
-	<!-- 不需要出网；编辑器完全离线 -->
+	<!--
+	  WKWebView 在沙盒下即使用 loadHTMLString 本地内容，也依赖 WebContent/网络进程通信。
+	  关闭 outgoing client 时常见症状：工具栏/状态栏正常，中间编辑区整片黑/空白。
+	-->
 	<key>com.apple.security.network.client</key>
-	<false/>
+	<true/>
 </dict>
 </plist>

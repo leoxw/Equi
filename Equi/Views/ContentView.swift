@@ -9,29 +9,8 @@ struct ContentView: View {
         VStack(spacing: 0) {
             EditorToolbar()
             Divider()
-            ZStack {
-                WebViewBridge(document: document, commands: commands)
-                    .frame(minWidth: 400, minHeight: 300)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .layoutPriority(1)
-
-                if !document.isEditorReady {
-                    VStack(spacing: 10) {
-                        ProgressView()
-                        Text("正在加载编辑器…")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Text("若超过 3 秒仍空白，请确认已 git pull 并运行 ./scripts/bootstrap-xcode.sh")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.ultraThinMaterial)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            editorPane
+            Divider()
             statusBar
         }
         .navigationTitle(document.windowTitle)
@@ -44,6 +23,37 @@ struct ContentView: View {
         .onAppear { applyWindowTitle() }
         .onChange(of: document.windowTitle) { _ in applyWindowTitle() }
         .onChange(of: document.isDirty) { _ in applyWindowTitle() }
+    }
+
+    /// 用 GeometryReader 把明确宽高传给 WKWebView，避免中间区域塌成 0。
+    private var editorPane: some View {
+        GeometryReader { proxy in
+            ZStack {
+                // 诊断底色：若仍全黑且看不到这层，说明整块 pane 高度为 0
+                Color(nsColor: .textBackgroundColor)
+
+                WebViewBridge(document: document, commands: commands)
+                    .frame(width: max(proxy.size.width, 1), height: max(proxy.size.height, 1))
+
+                if !document.isEditorReady {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                        Text("正在加载编辑器…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text("若超过 3 秒仍空白：git pull 后 Clean Build Folder 再 Run")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.ultraThinMaterial)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .layoutPriority(1)
     }
 
     private var statusBar: some View {
