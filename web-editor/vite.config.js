@@ -5,8 +5,8 @@ import fs from 'node:fs';
 const outDir = path.resolve(__dirname, '../Equi/Resources/Editor');
 
 /**
- * WKWebView 对 file:// + ES Module（type="module"）支持不可靠。
- * 使用 IIFE 经典脚本，保证离线本地加载。
+ * WKWebView 对 file:// 下的外链 <script>/<link> 经常静默失败。
+ * 构建时把 CSS + JS 全部内联进单一 index.html，用 loadHTMLString / loadFileURL 都能跑。
  */
 export default defineConfig({
   root: '.',
@@ -18,7 +18,7 @@ export default defineConfig({
     sourcemap: false,
     cssCodeSplit: false,
     chunkSizeWarningLimit: 1200,
-    assetsInlineLimit: 0,
+    assetsInlineLimit: 100_000_000,
     lib: {
       entry: path.resolve(__dirname, 'src/main.js'),
       name: 'EquiEditor',
@@ -34,55 +34,72 @@ export default defineConfig({
   },
   plugins: [
     {
-      name: 'equi-write-index-html',
+      name: 'equi-inline-single-html',
       closeBundle() {
-        const html = `<!DOCTYPE html>
-<html lang="zh-Hans">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
-    />
-    <title>Equi</title>
-    <link rel="stylesheet" href="./assets/style.css" />
-  </head>
-  <body>
-    <div id="app" class="app">
-      <div class="pane pane-source" id="pane-source">
-        <div class="pane-label">Markdown</div>
-        <div id="source-editor" class="editor-host"></div>
-      </div>
-      <div
-        class="splitter"
-        id="splitter"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="调整分栏"
-        tabindex="0"
-      ></div>
-      <div class="pane pane-wysiwyg" id="pane-wysiwyg">
-        <div class="pane-label">所见即所得</div>
-        <div id="wysiwyg-editor" class="editor-host prose"></div>
-      </div>
-    </div>
-    <script src="./assets/editor.js"></script>
-  </body>
-</html>
-`;
-        fs.mkdirSync(path.join(outDir, 'assets'), { recursive: true });
-        fs.writeFileSync(path.join(outDir, 'index.html'), html, 'utf8');
-
-        // Vite lib 模式 CSS 可能叫 style.css 或入口名.css，统一成 style.css
         const assetsDir = path.join(outDir, 'assets');
+        fs.mkdirSync(assetsDir, { recursive: true });
+
+        // 统一 CSS 文件名
+        let cssName = 'style.css';
         if (fs.existsSync(assetsDir)) {
           for (const name of fs.readdirSync(assetsDir)) {
-            if (name.endsWith('.css') && name !== 'style.css') {
-              fs.renameSync(path.join(assetsDir, name), path.join(assetsDir, 'style.css'));
+            if (name.endsWith('.css')) {
+              const target = path.join(assetsDir, 'style.css');
+              if (name !== 'style.css') {
+                fs.renameSync(path.join(assetsDir, name), target);
+              }
+              cssName = 'style.css';
             }
           }
         }
+
+        const jsPath = path.join(assetsDir, 'editor.js');
+        const cssPath = path.join(assetsDir, cssName);
+        if (!fs.existsSync(jsPath)) {
+          throw new Error(`缺少 ${jsPath}`);
+        }
+
+        const js = fs.readFileSync(jsPath, 'utf8');
+        const css = fs.existsSync(cssPath) ? fs.readFileSync(cssPath, 'utf8') : '';
+
+        // 转义 </script> 防止提前闭合
+        const safeJs = js.replace(/<\/script/gi, '<\\/script');
+
+        const html = `<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+<title>Equi</title>
+<style>
+${css}
+</style>
+</head>
+<body>
+<div id="app" class="app">
+  <div class="pane pane-source" id="pane-source">
+    <div class="pane-label">Markdown</div>
+    <div id="source-editor" class="editor-host"></div>
+  </div>
+  <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="调整分栏" tabindex="0"></div>
+  <div class="pane pane-wysiwyg" id="pane-wysiwyg">
+    <div class="pane-label">所见即所得</div>
+    <div id="wysiwyg-editor" class="editor-host prose"></div>
+  </div>
+</div>
+<script>
+${safeJs}
+</script>
+</body>
+</html>
+`;
+
+        fs.writeFileSync(path.join(outDir, 'index.html'), html, 'utf8');
+        // 保留拆分资源便于调试；运行时优先用内联 index.html
+        console.log(
+          `[equi] inlined index.html (${(html.length / 1024).toFixed(0)} KB)`
+        );
       },
     },
   ],

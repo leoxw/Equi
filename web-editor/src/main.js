@@ -9,90 +9,91 @@ import { createSyncEngine } from './sync/sync-engine.js';
 import { installSplitter } from './ui/splitter.js';
 import { notifyReady, logToSwift } from './bridge.js';
 
-const sourceHost = document.getElementById('source-editor');
-const wysiwygHost = document.getElementById('wysiwyg-editor');
-const splitterEl = document.getElementById('splitter');
-const appEl = document.getElementById('app');
-const leftPane = document.getElementById('pane-source');
+function boot() {
+  const sourceHost = document.getElementById('source-editor');
+  const wysiwygHost = document.getElementById('wysiwyg-editor');
+  const splitterEl = document.getElementById('splitter');
+  const appEl = document.getElementById('app');
+  const leftPane = document.getElementById('pane-source');
 
-/** 前向引用：sync 在 editors 之后创建 */
-const syncRef = { current: null };
+  if (!sourceHost || !wysiwygHost || !appEl) {
+    throw new Error('DOM 节点缺失：需要 #app / #source-editor / #wysiwyg-editor');
+  }
 
-const source = createSourceEditor(sourceHost, {
-  onChange: (md) => syncRef.current?.onSourceChange(md),
-  onFocus: () => syncRef.current?.setFocus('source'),
-  onBlur: () => {
-    // 若焦点转移到右栏，右栏 focus 会覆盖；否则置 none
-    setTimeout(() => {
-      if (!wysiwyg.editor.isFocused && !source.view.hasFocus) {
-        syncRef.current?.setFocus('none');
+  /** 前向引用：sync 在 editors 之后创建 */
+  const syncRef = { current: null };
+
+  const source = createSourceEditor(sourceHost, {
+    onChange: (md) => syncRef.current?.onSourceChange(md),
+    onFocus: () => syncRef.current?.setFocus('source'),
+    onBlur: () => {
+      setTimeout(() => {
+        if (!wysiwyg.editor.isFocused && !source.view.hasFocus) {
+          syncRef.current?.setFocus('none');
+        }
+      }, 0);
+    },
+    onScroll: (ratio) => syncRef.current?.onSourceScroll(ratio),
+  });
+
+  const wysiwyg = createWysiwygEditor(wysiwygHost, {
+    onChange: (getHtml) => syncRef.current?.onWysiwygChange(getHtml),
+    onFocus: () => syncRef.current?.setFocus('wysiwyg'),
+    onBlur: () => {
+      setTimeout(() => {
+        if (!wysiwyg.editor.isFocused && !source.view.hasFocus) {
+          syncRef.current?.setFocus('none');
+        }
+      }, 0);
+    },
+    onScroll: (ratio) => syncRef.current?.onWysiwygScroll(ratio),
+  });
+
+  const sync = createSyncEngine({ source, wysiwyg });
+  syncRef.current = sync;
+
+  installSplitter({
+    splitter: splitterEl,
+    leftPane,
+    container: appEl,
+  });
+
+  window.EditorAPI = {
+    setMarkdown(payload) {
+      if (typeof payload === 'string') {
+        sync.setMarkdownFromNative({ markdown: payload, markClean: true });
+        return;
       }
-    }, 0);
-  },
-  onScroll: (ratio) => syncRef.current?.onSourceScroll(ratio),
-});
-
-const wysiwyg = createWysiwygEditor(wysiwygHost, {
-  onChange: (getHtml) => syncRef.current?.onWysiwygChange(getHtml),
-  onFocus: () => syncRef.current?.setFocus('wysiwyg'),
-  onBlur: () => {
-    setTimeout(() => {
-      if (!wysiwyg.editor.isFocused && !source.view.hasFocus) {
-        syncRef.current?.setFocus('none');
+      sync.setMarkdownFromNative(payload ?? {});
+    },
+    getMarkdown() {
+      return sync.getMarkdown();
+    },
+    undo() {
+      const truth = sync.getSourceOfTruth();
+      if (truth === 'wysiwyg') wysiwyg.undo();
+      else source.undo();
+    },
+    redo() {
+      const truth = sync.getSourceOfTruth();
+      if (truth === 'wysiwyg') wysiwyg.redo();
+      else source.redo();
+    },
+    focusPane(pane) {
+      if (pane === 'wysiwyg') {
+        sync.setFocus('wysiwyg');
+        wysiwyg.focus();
+      } else {
+        sync.setFocus('source');
+        source.focus();
       }
-    }, 0);
-  },
-  onScroll: (ratio) => syncRef.current?.onWysiwygScroll(ratio),
-});
+    },
+    markClean() {
+      sync.markClean();
+    },
+  };
 
-const sync = createSyncEngine({ source, wysiwyg });
-syncRef.current = sync;
-
-installSplitter({
-  splitter: splitterEl,
-  leftPane,
-  container: appEl,
-});
-
-/** Swift 可调用的全局 API */
-window.EditorAPI = {
-  setMarkdown(payload) {
-    // payload 可能是对象，或（容错）纯字符串
-    if (typeof payload === 'string') {
-      sync.setMarkdownFromNative({ markdown: payload, markClean: true });
-      return;
-    }
-    sync.setMarkdownFromNative(payload ?? {});
-  },
-  getMarkdown() {
-    return sync.getMarkdown();
-  },
-  undo() {
-    const truth = sync.getSourceOfTruth();
-    if (truth === 'wysiwyg') wysiwyg.undo();
-    else source.undo();
-  },
-  redo() {
-    const truth = sync.getSourceOfTruth();
-    if (truth === 'wysiwyg') wysiwyg.redo();
-    else source.redo();
-  },
-  focusPane(pane) {
-    if (pane === 'wysiwyg') {
-      sync.setFocus('wysiwyg');
-      wysiwyg.focus();
-    } else {
-      sync.setFocus('source');
-      source.focus();
-    }
-  },
-  markClean() {
-    sync.markClean();
-  },
-};
-
-// 初始欢迎文稿（仅开发态；正式由 Swift setMarkdown 覆盖）
-const welcome = `# Equi
+  const welcome = `# Equi
 
 左侧编辑 **原始 Markdown**，右侧进行所见即所得排版。
 
@@ -109,11 +110,28 @@ console.log('离线 Bundle，无外网依赖');
 > 通过 Cmd+O / Cmd+S 由 macOS 原生层管理文件。
 `;
 
-if (!window.webkit?.messageHandlers?.editorBridge) {
-  sync.setMarkdownFromNative({ markdown: welcome, revision: 0, markClean: true });
+  if (!window.webkit?.messageHandlers?.editorBridge) {
+    sync.setMarkdownFromNative({ markdown: welcome, revision: 0, markClean: true });
+  }
+
+  notifyReady();
+  logToSwift('Editor kernel booted');
+  source.focus();
 }
 
-notifyReady();
-logToSwift('Editor kernel booted');
-
-source.focus();
+try {
+  boot();
+} catch (err) {
+  console.error('[Equi] boot failed', err);
+  try {
+    logToSwift('boot failed: ' + (err?.message || String(err)));
+  } catch (_) {
+    /* ignore */
+  }
+  document.body.innerHTML =
+    '<div style="padding:28px;font:13px -apple-system;line-height:1.5;color:#c0392b;background:#f6f5f2">' +
+    '<h2 style="margin:0 0 8px">编辑器启动失败</h2>' +
+    '<pre style="white-space:pre-wrap">' +
+    String(err?.stack || err?.message || err) +
+    '</pre></div>';
+}

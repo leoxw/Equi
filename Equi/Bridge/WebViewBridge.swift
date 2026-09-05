@@ -15,6 +15,7 @@ struct WebViewBridge: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        // 本地 file 互访（KVC）；内联 HTML 为主路径，这两项作兜底
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         config.preferences.isElementFullscreenEnabled = false
@@ -29,7 +30,7 @@ struct WebViewBridge: NSViewRepresentable {
                 window.onerror = function(msg, src, line) {
                   try {
                     window.webkit.messageHandlers.editorBridge.postMessage({
-                      type: 'log', message: 'JSError: ' + msg + ' @' + src + ':' + line
+                      type: 'log', message: 'JSError: ' + msg + ' @' + (src||'') + ':' + line
                     });
                   } catch (e) {}
                 };
@@ -71,7 +72,6 @@ struct WebViewBridge: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
-        /// 必须与 web-editor/src/bridge.js 的 HANDLER 一致
         static let bridgeName = "editorBridge"
 
         var document: DocumentModel
@@ -82,6 +82,7 @@ struct WebViewBridge: NSViewRepresentable {
         private var editorDidLoad = false
         private var cancellables = Set<AnyCancellable>()
         private var lastTicket: UInt64 = 0
+        private var readyWatchdog: DispatchWorkItem?
 
         init(document: DocumentModel, commands: EditorCommandBus) {
             self.document = document
@@ -89,6 +90,7 @@ struct WebViewBridge: NSViewRepresentable {
         }
 
         deinit {
+            readyWatchdog?.cancel()
             webView?.configuration.userContentController
                 .removeScriptMessageHandler(forName: Self.bridgeName)
         }
@@ -115,41 +117,129 @@ struct WebViewBridge: NSViewRepresentable {
             }
         }
 
-        func loadEditorBundle(into webView: WKWebView) {
-            let candidates: [URL?] = [
-                Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Editor"),
-                Bundle.main.resourceURL?.appendingPathComponent("Editor/index.html"),
-                Bundle.main.url(forResource: "index", withExtension: "html"),
-                URL(fileURLWithPath: #file)
-                    .deletingLastPathComponent()
-                    .deletingLastPathComponent()
-                    .appendingPathComponent("Resources/Editor/index.html")
-            ]
+        // MARK: Load — 优先把内联 index.html 读成字符串注入（避开 file:// 外链脚本坑）
 
-            for case let url? in candidates where FileManager.default.fileExists(atPath: url.path) {
-                #if DEBUG
-                print("[Equi] Loading editor:", url.path)
-                #endif
-                webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        func loadEditorBundle(into webView: WKWebView) {
+            guard let editorDir = Self.resolveEditorDirectory() else {
+                let listing = Self.resourceListing()
+                showError(
+                    in: webView,
+                    title: "Editor Bundle 未找到",
+                    detail: """
+                    未找到 <code>Editor/index.html</code>。<br/><br/>
+                    Bundle Resources 目录：<br/><code>\(Bundle.main.resourcePath ?? "?")</code><br/><br/>
+                    内容列表：<br/><pre style="white-space:pre-wrap;font-size:11px">\(listing)</pre>
+                    <p>请确认 Xcode 中 <code>Equi/Resources/Editor</code> 为蓝色 Folder Reference，并勾选 Target Membership。</p>
+                    """
+                )
                 return
             }
 
-            showError(in: webView, title: "Editor Bundle 未找到", detail: """
-            未找到 Editor/index.html。<br/>
-            请确认 <code>Equi/Resources/Editor</code> 为蓝色 Folder Reference，并勾选 Target。
-            """)
+            let indexURL = editorDir.appendingPathComponent("index.html")
+            do {
+                let html = try String(contentsOf: indexURL, encoding: .utf8)
+                #if DEBUG
+                print("[Equi] loadHTMLString from", indexURL.path, "bytes=", html.utf8.count)
+                #endif
+                // baseURL 指向 Editor 目录；即便有相对资源也能解析
+                webView.loadHTMLString(html, baseURL: editorDir)
+                startReadyWatchdog(on: webView, editorDir: editorDir)
+            } catch {
+                showError(in: webView, title: "无法读取 index.html", detail: error.localizedDescription)
+            }
+        }
+
+        private func startReadyWatchdog(on webView: WKWebView, editorDir: URL) {
+            readyWatchdog?.cancel()
+            let work = DispatchWorkItem { [weak self, weak webView] in
+                guard let self, let webView, !self.editorDidLoad else { return }
+                webView.evaluateJavaScript("typeof window.EditorAPI") { result, _ in
+                    let ready = (result as? String) == "object"
+                    if ready {
+                        // JS 在跑但没发 ready：手动补发
+                        self.evaluate("window.EditorAPI && window.webkit.messageHandlers.editorBridge.postMessage({type:'ready'})")
+                        return
+                    }
+                    let jsURL = editorDir.appendingPathComponent("assets/editor.js")
+                    let jsExists = FileManager.default.fileExists(atPath: jsURL.path)
+                    let indexSize: String = {
+                        let u = editorDir.appendingPathComponent("index.html")
+                        guard let attrs = try? FileManager.default.attributesOfItem(atPath: u.path),
+                              let size = attrs[.size] as? NSNumber else { return "?" }
+                        return "\(size.intValue) bytes"
+                    }()
+                    self.showError(
+                        in: webView,
+                        title: "编辑器脚本未启动",
+                        detail: """
+                        HTML 已注入，但 <code>EditorAPI</code> 仍未就绪。<br/>
+                        index.html 大小：<code>\(indexSize)</code>（内联后应 &gt; 500KB）<br/>
+                        assets/editor.js 存在：<code>\(jsExists)</code><br/>
+                        Editor 路径：<code>\(editorDir.path)</code><br/><br/>
+                        请执行：<code>git pull && ./scripts/build-editor.sh</code> 后重新 Run。
+                        """
+                    )
+                }
+            }
+            readyWatchdog = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+        }
+
+        private static func resolveEditorDirectory() -> URL? {
+            // 1) Bundle/Editor/
+            if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Editor") {
+                return url.deletingLastPathComponent()
+            }
+            if let res = Bundle.main.resourceURL {
+                let dir = res.appendingPathComponent("Editor")
+                if FileManager.default.fileExists(atPath: dir.appendingPathComponent("index.html").path) {
+                    return dir
+                }
+            }
+            // 2) 扁平：Resources/index.html
+            if let url = Bundle.main.url(forResource: "index", withExtension: "html") {
+                return url.deletingLastPathComponent()
+            }
+            // 3) 开发态源码树
+            let dev = URL(fileURLWithPath: #file)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Resources/Editor")
+            if FileManager.default.fileExists(atPath: dev.appendingPathComponent("index.html").path) {
+                return dev
+            }
+            return nil
+        }
+
+        private static func resourceListing() -> String {
+            guard let root = Bundle.main.resourceURL else { return "(no resourceURL)" }
+            let fm = FileManager.default
+            let items = (try? fm.contentsOfDirectory(atPath: root.path)) ?? []
+            var lines: [String] = [root.path]
+            for name in items.sorted().prefix(40) {
+                let p = root.appendingPathComponent(name)
+                var isDir: ObjCBool = false
+                fm.fileExists(atPath: p.path, isDirectory: &isDir)
+                lines.append((isDir.boolValue ? "📁 " : "📄 ") + name)
+            }
+            return lines.joined(separator: "\n")
         }
 
         private func showError(in webView: WKWebView, title: String, detail: String) {
             let html = """
             <html><head><meta charset="utf-8"><style>
-            body{font:13px -apple-system;padding:32px;color:#333;background:#f4f3f0}
+            body{font:13px -apple-system;padding:28px;line-height:1.5;
+              color:#222;background:#f3f1ec}
             @media(prefers-color-scheme:dark){body{color:#eee;background:#1c1c1e}}
-            code{background:rgba(127,127,127,.2);padding:1px 4px;border-radius:3px}
-            </style></head><body><h2>\(title)</h2><p>\(detail)</p></body></html>
+            code,pre{background:rgba(127,127,127,.18);padding:2px 5px;border-radius:4px}
+            h2{margin:0 0 12px;color:#c0392b}
+            </style></head>
+            <body><h2>\(title)</h2><div>\(detail)</div></body></html>
             """
             webView.loadHTMLString(html, baseURL: nil)
         }
+
+        // MARK: Swift → JS
 
         func pushNativeContentIfNeeded() {
             guard editorDidLoad else { return }
@@ -178,6 +268,8 @@ struct WebViewBridge: NSViewRepresentable {
             evaluate("\(fn)(\(json))")
         }
 
+        // MARK: JS → Swift
+
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
             guard message.name == Self.bridgeName,
@@ -187,6 +279,7 @@ struct WebViewBridge: NSViewRepresentable {
             Task { @MainActor in
                 switch type {
                 case "ready":
+                    self.readyWatchdog?.cancel()
                     self.editorDidLoad = true
                     self.document.isEditorReady = true
                     self.lastPushedRevision = 0
@@ -230,27 +323,16 @@ struct WebViewBridge: NSViewRepresentable {
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.cancel); return
+            }
             if url.isFileURL || url.absoluteString.hasPrefix("about:") {
                 decisionHandler(.allow); return
             }
-            if navigationAction.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
-            decisionHandler(.cancel)
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            webView.evaluateJavaScript("typeof window.EditorAPI") { result, _ in
-                let ok = (result as? String) == "object"
-                if !ok && !self.editorDidLoad {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        guard !self.editorDidLoad else { return }
-                        self.showError(in: webView, title: "编辑器脚本未启动", detail: """
-                        HTML 已加载，但 <code>EditorAPI</code> 未就绪（常见于 file:// 无法跑 ES Module）。<br/>
-                        请 <code>git pull</code> 后执行 <code>./scripts/build-editor.sh</code>，再重新 Run / 打包。
-                        """)
-                    }
-                }
+            if navigationAction.navigationType == .linkActivated {
+                NSWorkspace.shared.open(url)
             }
+            decisionHandler(.cancel)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
