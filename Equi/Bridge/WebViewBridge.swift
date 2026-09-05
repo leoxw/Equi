@@ -3,7 +3,7 @@ import WebKit
 import Combine
 import AppKit
 
-/// AppKit 宿主：用 view controller 管理 WKWebView，避免 SwiftUI NSViewRepresentable 零尺寸。
+/// AppKit 宿主：用 view controller 管理 WKWebView，避免 SwiftUI Representable 零尺寸。
 final class EditorWebViewController: NSViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     static let bridgeName = "editorBridge"
 
@@ -17,6 +17,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
     private var lastTicket: UInt64 = 0
     private var readyWatchdog: DispatchWorkItem?
     private var didStartLoad = false
+    private var sawHTMLExec = false
 
     init(document: DocumentModel, commands: EditorCommandBus) {
         self.document = document
@@ -54,7 +55,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 window.onerror = function(msg, src, line) {
                   try {
                     window.webkit.messageHandlers.editorBridge.postMessage({
-                      type: 'log', message: 'JSError: ' + msg + ' @' + (src||'') + ':' + line
+                      type: 'log', message: 'JSError: ' + msg + ' @' + (src || '') + ':' + line
                     });
                   } catch (e) {}
                 };
@@ -91,7 +92,6 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        // 等宿主给出非零 frame 后再加载，避免首帧空白
         DispatchQueue.main.async { [weak self] in
             guard let self, let webView = self.webView else { return }
             webView.frame = self.view.bounds
@@ -169,7 +169,8 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             #if DEBUG
             print("[Equi] loadHTMLString", indexURL.path, "bytes=", html.utf8.count, "bounds=", webView.bounds)
             #endif
-            webView.loadHTMLString(html, baseURL: editorDir)
+            // 全部内联后不要带 file baseURL，否则 WebContent 会去打开本地路径并报 Couldn't open <private>
+            webView.loadHTMLString(html, baseURL: nil)
             startReadyWatchdog(on: webView, editorDir: editorDir)
         } catch {
             showError(in: webView, title: "无法读取 index.html", detail: error.localizedDescription)
@@ -196,16 +197,17 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                           let size = attrs[.size] as? NSNumber else { return "?" }
                     return "\(size.intValue) bytes"
                 }()
+                let htmlExec = self.sawHTMLExec ? "是" : "否"
                 self.showError(
                     in: webView,
                     title: "编辑器脚本未启动",
                     detail: """
                     HTML 已注入，但 <code>EditorAPI</code> 未就绪。<br/>
                     index.html：<code>\(indexSize)</code>（内联后应 &gt; 500KB）<br/>
+                    收到 html-inline-exec：<code>\(htmlExec)</code><br/>
                     WebView bounds：<code>\(Int(webView.bounds.width))×\(Int(webView.bounds.height))</code><br/>
                     路径：<code>\(editorDir.path)</code><br/><br/>
-                    若仍全黑：确认 entitlements 已开启 <code>com.apple.security.network.client</code>，
-                    然后 Clean Build Folder 再 Run。
+                    请 Clean Build Folder 后重跑；确认 Target 含 <code>Resources/Editor</code>。
                     """
                 )
             }
@@ -248,6 +250,16 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
     }
 
     private func showError(in webView: WKWebView, title: String, detail: String) {
+        // 撤掉转圈，否则错误页永远被遮罩盖住
+        let plain = detail
+            .replacingOccurrences(of: "<br/>", with: "\n")
+            .replacingOccurrences(of: "<br>", with: "\n")
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&amp;", with: "&")
+        document.markEditorFailed("\(title)\n\(plain)")
+
         let html = """
         <html><head><meta charset="utf-8"><style>
         body{font:13px -apple-system;padding:28px;line-height:1.5;color:#222;background:#f3f1ec}
@@ -298,7 +310,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             case "ready":
                 self.readyWatchdog?.cancel()
                 self.editorDidLoad = true
-                self.document.isEditorReady = true
+                self.document.markEditorReady()
                 self.lastPushedRevision = 0
                 if self.document.content.isEmpty {
                     let welcome = """
@@ -325,7 +337,16 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 if let dirty = body["dirty"] as? Bool { self.document.isDirty = dirty }
 
             case "log":
-                print("[Editor]", body["message"] as? String ?? String(describing: body))
+                let msg = body["message"] as? String ?? String(describing: body)
+                print("[Editor]", msg)
+                if msg.contains("html-inline-exec") {
+                    self.sawHTMLExec = true
+                }
+
+            case "loadError":
+                let msg = body["message"] as? String ?? "编辑器启动失败"
+                self.readyWatchdog?.cancel()
+                self.document.markEditorFailed(msg)
 
             default: break
             }

@@ -70,13 +70,14 @@ export default defineConfig({
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; worker-src blob: 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'" />
 <title>Equi</title>
 <style>
 ${css}
 </style>
 </head>
 <body>
+<div data-equi-probe="1" style="position:fixed;z-index:99999;left:8px;top:8px;padding:4px 8px;border-radius:6px;font:11px -apple-system;background:#0a7a5c;color:#fff;opacity:.9">Equi WebView OK</div>
 <div id="app" class="app">
   <div class="pane pane-source" id="pane-source">
     <div class="pane-label">Markdown</div>
@@ -88,6 +89,12 @@ ${css}
     <div id="wysiwyg-editor" class="editor-host prose"></div>
   </div>
 </div>
+<script>
+try {
+  window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.editorBridge &&
+  window.webkit.messageHandlers.editorBridge.postMessage({ type: 'log', message: 'html-inline-exec' });
+} catch (e) {}
+</script>
 <script>
 ${safeJs}
 </script>

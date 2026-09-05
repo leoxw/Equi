@@ -15,9 +15,21 @@ final class DocumentModel: ObservableObject {
     @Published var wordCount: Int = 0
     @Published var characterCount: Int = 0
     @Published var isEditorReady: Bool = false
+    /// Web 编辑器加载失败时的可读原因；非 nil 时 UI 应撤掉转圈并展示错误。
+    @Published var editorLoadError: String? = nil
 
     /// 最近一次由原生侧主动下发到 Web 的内容版本号，用于去重。
     private(set) var nativeRevision: UInt64 = 0
+
+    func markEditorFailed(_ message: String) {
+        editorLoadError = message
+        isEditorReady = false
+    }
+
+    func markEditorReady() {
+        editorLoadError = nil
+        isEditorReady = true
+    }
 
     var displayTitle: String {
         if let fileURL {

@@ -45,3 +45,7 @@ export function notifyDirty(dirty) {
 export function logToSwift(message) {
   postToSwift({ type: 'log', message: String(message) });
 }
+
+export function notifyLoadError(message) {
+  postToSwift({ type: 'loadError', message: String(message) });
+}

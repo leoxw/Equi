@@ -9,6 +9,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             EditorToolbar()
             Divider()
+            editorStatusBanner
             editorPane
             Divider()
             statusBar
@@ -25,31 +26,46 @@ struct ContentView: View {
         .onChange(of: document.isDirty) { _ in applyWindowTitle() }
     }
 
-    /// 用 GeometryReader 把明确宽高传给 WKWebView，避免中间区域塌成 0。
+    /// 顶栏状态：绝不盖住 WebView，否则失败页/探针会被挡住，看起来像“一直加载”。
+    @ViewBuilder
+    private var editorStatusBanner: some View {
+        if let error = document.editorLoadError {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.12))
+        } else if !document.isEditorReady {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在加载编辑器…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
+        }
+    }
+
+    /// GeometryReader 把明确宽高传给 WKWebView，避免中间区域塌成 0。
     private var editorPane: some View {
         GeometryReader { proxy in
             ZStack {
-                // 诊断底色：若仍全黑且看不到这层，说明整块 pane 高度为 0
                 Color(nsColor: .textBackgroundColor)
-
                 WebViewBridge(document: document, commands: commands)
                     .frame(width: max(proxy.size.width, 1), height: max(proxy.size.height, 1))
-
-                if !document.isEditorReady {
-                    VStack(spacing: 10) {
-                        ProgressView()
-                        Text("正在加载编辑器…")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Text("若超过 3 秒仍空白：git pull 后 Clean Build Folder 再 Run")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.ultraThinMaterial)
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,7 +98,11 @@ struct ContentView: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
 
-            if !document.isEditorReady {
+            if document.editorLoadError != nil {
+                Image(systemName: "exclamationmark.circle")
+                    .foregroundStyle(.orange)
+                    .help("编辑器加载失败")
+            } else if !document.isEditorReady {
                 ProgressView()
                     .controlSize(.small)
                     .help("编辑器加载中…")

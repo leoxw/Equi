@@ -7,7 +7,7 @@ import { createSourceEditor } from './editors/source-editor.js';
 import { createWysiwygEditor } from './editors/wysiwyg-editor.js';
 import { createSyncEngine } from './sync/sync-engine.js';
 import { installSplitter } from './ui/splitter.js';
-import { notifyReady, logToSwift } from './bridge.js';
+import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
 
 function boot() {
   const sourceHost = document.getElementById('source-editor');
@@ -123,15 +123,20 @@ try {
   boot();
 } catch (err) {
   console.error('[Equi] boot failed', err);
+  const msg = err?.stack || err?.message || String(err);
   try {
-    logToSwift('boot failed: ' + (err?.message || String(err)));
+    notifyLoadError(msg);
   } catch (_) {
-    /* ignore */
+    try {
+      logToSwift('boot failed: ' + msg);
+    } catch (__) {
+      /* ignore */
+    }
   }
   document.body.innerHTML =
     '<div style="padding:28px;font:13px -apple-system;line-height:1.5;color:#c0392b;background:#f6f5f2">' +
     '<h2 style="margin:0 0 8px">编辑器启动失败</h2>' +
     '<pre style="white-space:pre-wrap">' +
-    String(err?.stack || err?.message || err) +
+    String(msg) +
     '</pre></div>';
 }

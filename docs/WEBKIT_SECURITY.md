@@ -48,6 +48,8 @@ config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
 
 用户 Markdown 文件通过 `NSOpenPanel` / `NSSavePanel` 获得 security-scoped 访问；**不要**把用户文档目录传给 `allowingReadAccessTo`。
 
+加载方式：Editor 为**全内联** `index.html`，Swift 使用 `loadHTMLString(_:baseURL: nil)`。不要再传 `Editor/` 目录作 baseURL——否则 WebContent 进程会尝试打开本地路径，控制台出现 `Couldn't open <private>`，脚本可能起不来。
+
 ## 4. 内容安全策略（CSP）
 
 `index.html` 内：
