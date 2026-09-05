@@ -37,7 +37,8 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: transparent;
+  background: var(--bg);
+  color: var(--text);
   color: var(--text);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;

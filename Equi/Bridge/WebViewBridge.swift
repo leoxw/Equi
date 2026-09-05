@@ -1,8 +1,9 @@
 import SwiftUI
 import WebKit
 import Combine
+import AppKit
 
-/// JS ↔ Swift 双向桥接：封装 WKWebView，加载本地 Editor Bundle，并转发消息。
+/// JS ↔ Swift 双向桥接：封装 WKWebView，加载本地 Editor Bundle。
 struct WebViewBridge: NSViewRepresentable {
 
     @ObservedObject var document: DocumentModel
@@ -14,35 +15,42 @@ struct WebViewBridge: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-
-        // —— 本地 file:// 资源互访（KVC 私有偏好，App Store 需自行评估风险）——
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
-
         config.preferences.isElementFullscreenEnabled = false
         config.defaultWebpagePreferences.allowsContentJavaScript = true
 
         let userContent = config.userContentController
         userContent.add(context.coordinator, name: Coordinator.bridgeName)
-
-        let bootstrap = WKUserScript(
-            source: """
-            window.__EQUI_EDITOR__ = {
-              platform: 'macos',
-              app: 'Equi',
-              bridgeReady: true
-            };
-            """,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: true
+        userContent.addUserScript(
+            WKUserScript(
+                source: """
+                window.__EQUI_EDITOR__ = { platform: 'macos', app: 'Equi', bridgeReady: true };
+                window.onerror = function(msg, src, line) {
+                  try {
+                    window.webkit.messageHandlers.editorBridge.postMessage({
+                      type: 'log', message: 'JSError: ' + msg + ' @' + src + ':' + line
+                    });
+                  } catch (e) {}
+                };
+                """,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
         )
-        userContent.addUserScript(bootstrap)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.setValue(false, forKey: "drawsBackground")
+        webView.setValue(true, forKey: "drawsBackground")
+        if #available(macOS 12.0, *) {
+            webView.underPageBackgroundColor = NSColor.textBackgroundColor
+        }
         webView.allowsMagnification = true
+        webView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        webView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        webView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        webView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         #if DEBUG
         if #available(macOS 13.3, *) {
@@ -62,10 +70,8 @@ struct WebViewBridge: NSViewRepresentable {
         context.coordinator.pushNativeContentIfNeeded()
     }
 
-    // MARK: - Coordinator
-
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
-
+        /// 必须与 web-editor/src/bridge.js 的 HANDLER 一致
         static let bridgeName = "editorBridge"
 
         var document: DocumentModel
@@ -80,7 +86,6 @@ struct WebViewBridge: NSViewRepresentable {
         init(document: DocumentModel, commands: EditorCommandBus) {
             self.document = document
             self.commands = commands
-            super.init()
         }
 
         deinit {
@@ -103,62 +108,58 @@ struct WebViewBridge: NSViewRepresentable {
 
         private func handle(_ command: EditorCommandBus.Command) {
             switch command {
-            case .undo:
-                evaluate("window.EditorAPI && window.EditorAPI.undo()")
-            case .redo:
-                evaluate("window.EditorAPI && window.EditorAPI.redo()")
-            case .focusSource:
-                evaluate("window.EditorAPI && window.EditorAPI.focusPane('source')")
-            case .focusWysiwyg:
-                evaluate("window.EditorAPI && window.EditorAPI.focusPane('wysiwyg')")
+            case .undo: evaluate("window.EditorAPI && window.EditorAPI.undo()")
+            case .redo: evaluate("window.EditorAPI && window.EditorAPI.redo()")
+            case .focusSource: evaluate("window.EditorAPI && window.EditorAPI.focusPane('source')")
+            case .focusWysiwyg: evaluate("window.EditorAPI && window.EditorAPI.focusPane('wysiwyg')")
             }
         }
 
-        // MARK: Load local bundle
-
         func loadEditorBundle(into webView: WKWebView) {
-            if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Editor") {
-                webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-                return
-            }
-            if let url = Bundle.main.url(forResource: "index", withExtension: "html") {
+            let candidates: [URL?] = [
+                Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Editor"),
+                Bundle.main.resourceURL?.appendingPathComponent("Editor/index.html"),
+                Bundle.main.url(forResource: "index", withExtension: "html"),
+                URL(fileURLWithPath: #file)
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .appendingPathComponent("Resources/Editor/index.html")
+            ]
+
+            for case let url? in candidates where FileManager.default.fileExists(atPath: url.path) {
+                #if DEBUG
+                print("[Equi] Loading editor:", url.path)
+                #endif
                 webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
                 return
             }
 
-            let devPath = URL(fileURLWithPath: #file)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("Resources/Editor/index.html")
-            if FileManager.default.fileExists(atPath: devPath.path) {
-                webView.loadFileURL(devPath, allowingReadAccessTo: devPath.deletingLastPathComponent())
-                return
-            }
+            showError(in: webView, title: "Editor Bundle 未找到", detail: """
+            未找到 Editor/index.html。<br/>
+            请确认 <code>Equi/Resources/Editor</code> 为蓝色 Folder Reference，并勾选 Target。
+            """)
+        }
 
+        private func showError(in webView: WKWebView, title: String, detail: String) {
             let html = """
-            <html><body style="font-family:-apple-system;padding:40px;color:#888">
-            <h2>Editor Bundle 未找到</h2>
-            <p>请确认 Resources/Editor/index.html 已加入 Copy Bundle Resources。</p>
-            </body></html>
+            <html><head><meta charset="utf-8"><style>
+            body{font:13px -apple-system;padding:32px;color:#333;background:#f4f3f0}
+            @media(prefers-color-scheme:dark){body{color:#eee;background:#1c1c1e}}
+            code{background:rgba(127,127,127,.2);padding:1px 4px;border-radius:3px}
+            </style></head><body><h2>\(title)</h2><p>\(detail)</p></body></html>
             """
             webView.loadHTMLString(html, baseURL: nil)
         }
-
-        // MARK: Swift → JS
 
         func pushNativeContentIfNeeded() {
             guard editorDidLoad else { return }
             let rev = document.nativeRevision
             guard rev != lastPushedRevision else { return }
             lastPushedRevision = rev
-            setMarkdown(document.content, revision: rev, markClean: !document.isDirty)
-        }
-
-        func setMarkdown(_ markdown: String, revision: UInt64, markClean: Bool) {
             let payload: [String: Any] = [
-                "markdown": markdown,
-                "revision": revision,
-                "markClean": markClean
+                "markdown": document.content,
+                "revision": rev,
+                "markClean": !document.isDirty
             ]
             evaluateCall("window.EditorAPI && window.EditorAPI.setMarkdown", payload: payload)
         }
@@ -171,13 +172,11 @@ struct WebViewBridge: NSViewRepresentable {
             }
         }
 
-        private func evaluateCall(_ fnExpr: String, payload: [String: Any]) {
+        private func evaluateCall(_ fn: String, payload: [String: Any]) {
             guard let data = try? JSONSerialization.data(withJSONObject: payload),
                   let json = String(data: data, encoding: .utf8) else { return }
-            evaluate("\(fnExpr)(\(json))")
+            evaluate("\(fn)(\(json))")
         }
-
-        // MARK: JS → Swift
 
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
@@ -191,9 +190,25 @@ struct WebViewBridge: NSViewRepresentable {
                     self.editorDidLoad = true
                     self.document.isEditorReady = true
                     self.lastPushedRevision = 0
+                    if self.document.content.isEmpty {
+                        let welcome = """
+                        # Equi
+
+                        左侧编辑 **原始 Markdown**，右侧进行所见即所得排版。
+
+                        - 焦点在左：源码 → 富文本
+                        - 焦点在右：富文本 → 源码
+                        - 拖拽中间分隔条可调宽度
+
+                        ```js
+                        console.log('离线 Bundle');
+                        ```
+                        """
+                        self.document.replaceContent(welcome, markingClean: true)
+                    }
                     self.pushNativeContentIfNeeded()
 
-                case "contentChange":
+                case "contentChange", "contentChanged":
                     self.document.applyWebUpdate(
                         markdown: body["markdown"] as? String ?? "",
                         dirty: body["dirty"] as? Bool ?? true,
@@ -202,38 +217,48 @@ struct WebViewBridge: NSViewRepresentable {
                     )
 
                 case "dirty":
-                    if let dirty = body["dirty"] as? Bool {
-                        self.document.isDirty = dirty
-                    }
+                    if let dirty = body["dirty"] as? Bool { self.document.isDirty = dirty }
 
                 case "log":
-                    #if DEBUG
                     print("[Editor]", body["message"] as? String ?? String(describing: body))
-                    #endif
 
-                default:
-                    break
+                default: break
                 }
             }
         }
 
-        // MARK: Navigation — 禁止外网，外链走系统浏览器
-
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = navigationAction.request.url else {
-                decisionHandler(.cancel)
-                return
-            }
+            guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
             if url.isFileURL || url.absoluteString.hasPrefix("about:") {
-                decisionHandler(.allow)
-                return
+                decisionHandler(.allow); return
             }
-            if navigationAction.navigationType == .linkActivated {
-                NSWorkspace.shared.open(url)
-            }
+            if navigationAction.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            webView.evaluateJavaScript("typeof window.EditorAPI") { result, _ in
+                let ok = (result as? String) == "object"
+                if !ok && !self.editorDidLoad {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        guard !self.editorDidLoad else { return }
+                        self.showError(in: webView, title: "编辑器脚本未启动", detail: """
+                        HTML 已加载，但 <code>EditorAPI</code> 未就绪（常见于 file:// 无法跑 ES Module）。<br/>
+                        请 <code>git pull</code> 后执行 <code>./scripts/build-editor.sh</code>，再重新 Run / 打包。
+                        """)
+                    }
+                }
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            showError(in: webView, title: "页面加载失败", detail: error.localizedDescription)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            showError(in: webView, title: "页面加载失败", detail: error.localizedDescription)
         }
     }
 }

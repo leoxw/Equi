@@ -10,6 +10,7 @@ struct ContentView: View {
             EditorToolbar()
             Divider()
             WebViewBridge(document: document, commands: commands)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             statusBar
         }
         .navigationTitle(document.windowTitle)
