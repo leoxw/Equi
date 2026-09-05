@@ -11,7 +11,8 @@ settings:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "13.0"
     CODE_SIGN_STYLE: Automatic
-    ENABLE_HARDENED_RUNTIME: YES
+    # 本地无付费证书时 Hardened Runtime 易导致 CodeSign 失败；正式分发可再打开
+    ENABLE_HARDENED_RUNTIME: NO
     PRODUCT_NAME: Equi
 
 targets:

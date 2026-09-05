@@ -55,16 +55,16 @@ if [[ "${SKIP_EDITOR}" -eq 0 ]]; then
 fi
 
 ensure_xcodeproj() {
-  if [[ -d "${PROJECT_FILE}" ]]; then
-    return 0
-  fi
-
   if [[ ! -f "${SPEC_FILE}" ]]; then
     echo "错误：找不到 ${SPEC_FILE}，无法生成 Xcode 工程。"
     exit 1
   fi
 
   if ! command -v xcodegen >/dev/null; then
+    if [[ -d "${PROJECT_FILE}" ]]; then
+      echo "警告：未安装 xcodegen，使用已有 ${PROJECT_FILE}"
+      return 0
+    fi
     cat <<EOF
 错误：未找到 ${PROJECT_FILE}，且本机没有 xcodegen。
 
@@ -78,7 +78,7 @@ EOF
     exit 1
   fi
 
-  echo "==> 生成 Xcode 工程 (${SPEC_FILE} → ${PROJECT_FILE})"
+  echo "==> 生成 / 刷新 Xcode 工程 (${SPEC_FILE} → ${PROJECT_FILE})"
   xcodegen generate --spec "${SPEC_FILE}"
 
   if [[ ! -d "${PROJECT_FILE}" ]]; then
@@ -94,17 +94,59 @@ STAGE="${DIST_DIR}/dmg-stage"
 rm -rf "${STAGE}"
 mkdir -p "${STAGE}"
 
+ENTITLEMENTS="${ROOT}/Equi/Supporting/Equi.entitlements"
+# 本地打包默认：构建阶段关闭签名（避免沙盒 + Hardened Runtime 与 "-" 冲突），
+# 构建完成后再用 ad-hoc（codesign -s -）签名。
+# 若已配置 Apple 开发者 Team，可：DEVELOPMENT_TEAM=XXXXXXXX ./scripts/package-dmg.sh
+SIGN_ARGS=(
+  ENABLE_HARDENED_RUNTIME=NO
+  OTHER_CODE_SIGN_FLAGS=--timestamp=none
+)
+if [[ -n "${DEVELOPMENT_TEAM:-}" ]]; then
+  echo "==> 使用 Development Team: ${DEVELOPMENT_TEAM}"
+  SIGN_ARGS+=(
+    CODE_SIGN_STYLE=Automatic
+    DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}"
+    CODE_SIGN_IDENTITY="Apple Development"
+    CODE_SIGNING_ALLOWED=YES
+    CODE_SIGNING_REQUIRED=YES
+  )
+else
+  echo "==> 本地 ad-hoc 签名模式（无 DEVELOPMENT_TEAM）"
+  SIGN_ARGS+=(
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY=-
+    CODE_SIGNING_ALLOWED=NO
+    CODE_SIGNING_REQUIRED=NO
+    EXPANDED_CODE_SIGN_IDENTITY=-
+    EXPANDED_CODE_SIGN_IDENTITY_NAME=-
+  )
+fi
+
 echo "==> xcodebuild (${CONFIGURATION})"
+set +e
 xcodebuild \
   -project "${PROJECT_FILE}" \
   -scheme "${SCHEME}" \
   -configuration "${CONFIGURATION}" \
   -derivedDataPath "${DERIVED}" \
   -destination "platform=macOS" \
-  CODE_SIGN_IDENTITY="-" \
-  CODE_SIGNING_ALLOWED=YES \
-  CODE_SIGNING_REQUIRED=NO \
-  build
+  "${SIGN_ARGS[@]}" \
+  build 2>&1 | tee "${DIST_DIR}/xcodebuild.log"
+XCODE_STATUS=${PIPESTATUS[0]}
+set -e
+
+if [[ "${XCODE_STATUS}" -ne 0 ]]; then
+  echo ""
+  echo "xcodebuild 失败。末尾日志："
+  tail -n 40 "${DIST_DIR}/xcodebuild.log" || true
+  echo ""
+  echo "若仍是 CodeSign 错误，可尝试："
+  echo "  1) 打开 Xcode → Settings → Accounts 登录 Apple ID"
+  echo "  2) DEVELOPMENT_TEAM=你的TeamID ./scripts/package-dmg.sh"
+  echo "  3) 查看完整日志：${DIST_DIR}/xcodebuild.log"
+  exit "${XCODE_STATUS}"
+fi
 
 VERSION="$(xcodebuild -project "${PROJECT_FILE}" -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -showBuildSettings 2>/dev/null \
   | awk -F' = ' '/MARKETING_VERSION/ { print $2; exit }')"
@@ -121,6 +163,16 @@ fi
 
 echo "==> 版本 ${VERSION} (${BUILD_NUMBER})"
 echo "==> App: ${APP_SRC}"
+
+# 清理扩展属性后做 ad-hoc 签名（无 Team 时必须；有 Team 时加固一次也无妨）
+echo "==> codesign (ad-hoc)"
+xattr -cr "${APP_SRC}" || true
+if [[ -f "${ENTITLEMENTS}" ]]; then
+  codesign --force --deep --sign - --entitlements "${ENTITLEMENTS}" "${APP_SRC}"
+else
+  codesign --force --deep --sign - "${APP_SRC}"
+fi
+codesign --verify --verbose=2 "${APP_SRC}" || true
 
 cp -R "${APP_SRC}" "${STAGE}/${APP_NAME}.app"
 ln -sf /Applications "${STAGE}/Applications"
