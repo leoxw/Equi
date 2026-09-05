@@ -158,45 +158,14 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             return
         }
 
-        do {
-            // 只读 Bundle 内文件；用 Data 再解码，错误信息更清晰
-            let data = try Data(contentsOf: indexURL, options: [.mappedIfSafe])
-            guard var html = String(data: data, encoding: .utf8), !html.isEmpty else {
-                showError(
-                    in: webView,
-                    title: "index.html 内容无效",
-                    detail: "路径：<code>\(indexURL.path)</code><br/>字节：\(data.count)"
-                )
-                return
-            }
-            if !html.contains("data-equi-probe") {
-                html = html.replacingOccurrences(
-                    of: "<body>",
-                    with: """
-                    <body>
-                    <div data-equi-probe="1" style="position:fixed;z-index:99999;left:8px;top:8px;padding:4px 8px;border-radius:6px;font:11px -apple-system;background:#0a7a5c;color:#fff;opacity:.9">Equi WebView OK</div>
-                    """
-                )
-            }
-            #if DEBUG
-            print("[Equi] loadHTMLString", indexURL.path, "bytes=", html.utf8.count, "bounds=", webView.bounds)
-            #endif
-            // 全内联 HTML：baseURL 必须为 nil，避免 WebContent 打开本地路径
-            webView.loadHTMLString(html, baseURL: nil)
-            startReadyWatchdog(on: webView, indexURL: indexURL)
-        } catch {
-            showError(
-                in: webView,
-                title: "无法读取编辑器 HTML",
-                detail: """
-                \(error.localizedDescription)<br/><br/>
-                路径：<code>\(indexURL.path)</code><br/>
-                位于 Bundle 内：<code>\(Self.isInsideAppBundle(indexURL) ? "是" : "否")</code><br/><br/>
-                若显示「没有查看权限」：说明读到了沙盒外路径。请 Clean Build Folder，
-                确认 Copy Bundle Resources 含 <code>EquiEditor.html</code> / <code>Editor</code>。
-                """
-            )
-        }
+        // 优先 loadFileURL：file:// 源有正常 origin，避免 about:blank 下 localStorage 等 API 抛 SecurityError
+        // 全内联 HTML 不依赖相对资源；allowingReadAccessTo 指向 Resources 根即可
+        #if DEBUG
+        print("[Equi] loadFileURL", indexURL.path, "bounds=", webView.bounds)
+        #endif
+        let accessRoot = Bundle.main.resourceURL ?? indexURL.deletingLastPathComponent()
+        webView.loadFileURL(indexURL, allowingReadAccessTo: accessRoot)
+        startReadyWatchdog(on: webView, indexURL: indexURL)
     }
 
     private func startReadyWatchdog(on webView: WKWebView, indexURL: URL) {

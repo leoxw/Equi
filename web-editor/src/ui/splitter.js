@@ -6,8 +6,14 @@ export function installSplitter({ splitter, leftPane, container, storageKey = 'm
   const MIN = 0.22;
   const MAX = 0.78;
 
-  let ratio = Number(localStorage.getItem(storageKey));
-  if (!Number.isFinite(ratio) || ratio < MIN || ratio > MAX) ratio = 0.5;
+  // about:blank / 部分 file:// 下 localStorage 会抛 SecurityError，必须吞掉
+  let ratio = 0.5;
+  try {
+    const stored = Number(localStorage.getItem(storageKey));
+    if (Number.isFinite(stored) && stored >= MIN && stored <= MAX) ratio = stored;
+  } catch {
+    // ignore
+  }
 
   function apply(r) {
     ratio = Math.max(MIN, Math.min(MAX, r));
