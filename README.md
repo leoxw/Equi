@@ -1,4 +1,4 @@
-# Markdown Dual Editor
+# Equi
 
 macOS 独占的原生双栏 Markdown 编辑器：SwiftUI + AppKit 外壳，WKWebView 内嵌离线 Web 编辑内核（CodeMirror 6 + TipTap）。
 
@@ -12,162 +12,90 @@ macOS 独占的原生双栏 Markdown 编辑器：SwiftUI + AppKit 外壳，WKWeb
 
 ---
 
-## 目录结构（Xcode / Cursor）
+## 本地打包 DMG（macOS）
+
+在 Mac 上执行：
+
+```bash
+brew install xcodegen
+chmod +x scripts/*.sh
+./scripts/package-dmg.sh
+```
+
+产物：
+
+| 路径 | 说明 |
+|------|------|
+| `dist/Equi-<version>.dmg` | 拖拽安装盘（含 Applications 快捷方式） |
+| `dist/Equi.app` | 可直接双击运行 |
+
+```bash
+./scripts/package-dmg.sh --skip-editor          # 跳过前端重建
+CONFIGURATION=Debug ./scripts/package-dmg.sh   # Debug 包
+```
+
+也可在 GitHub Actions 中手动触发工作流 **Package Equi DMG**，或推送 `v*` tag 自动出包。
+
+> Linux / Cloud Agent 没有 `xcodebuild` / `hdiutil`，无法在此环境生成可运行的 macOS DMG。
+
+---
+
+## 目录结构
 
 ```
 .
-├── project.yml                          # XcodeGen 工程描述（可选）
-├── README.md
-├── docs/
-│   └── WEBKIT_SECURITY.md               # 本地 file:// 安全策略说明
-├── MarkdownDualEditor/
+├── project.yml
+├── scripts/
+│   ├── build-editor.sh      # 前端 → Equi/Resources/Editor
+│   └── package-dmg.sh       # xcodebuild + hdiutil → dist/*.dmg
+├── Equi/
 │   ├── App/
-│   │   ├── MarkdownDualEditorApp.swift  # @main、Commands 快捷键
-│   │   └── WindowChrome.swift           # 毛玻璃窗口配置
-│   ├── Models/
-│   │   └── DocumentModel.swift          # 文档内容 / 路径 / dirty / 字数
+│   │   ├── EquiApp.swift
+│   │   └── WindowChrome.swift
+│   ├── Models/DocumentModel.swift
 │   ├── Bridge/
-│   │   ├── WebViewBridge.swift          # NSViewRepresentable + WK 消息桥
-│   │   └── EditorCommandBus.swift       # 原生 → Web 命令总线
-│   ├── Views/
-│   │   └── ContentView.swift            # 工具栏 + WebView + 状态栏
-│   ├── Resources/
-│   │   └── Editor/                      # ★ 构建产物（打进 App Bundle）
-│   │       ├── index.html
-│   │       └── assets/
-│   │           ├── editor.js
-│   │           └── style.css
+│   ├── Views/ContentView.swift
+│   ├── Resources/Editor/    # 离线 Web Bundle（打进 App）
 │   └── Supporting/
 │       ├── Info.plist
-│       ├── MarkdownDualEditor.entitlements
-│       └── Assets.xcassets/
-└── web-editor/                          # 前端源码（Vite 打包）
-    ├── package.json
-    ├── vite.config.js
-    ├── index.html
-    └── src/
-        ├── main.js
-        ├── bridge.js
-        ├── styles/editor.css
-        ├── editors/
-        │   ├── source-editor.js         # CodeMirror 6
-        │   └── wysiwyg-editor.js        # TipTap
-        ├── sync/
-        │   ├── sync-engine.js           # sourceOfTruth / Sync Lock
-        │   └── markdown-io.js           # MD ↔ HTML
-        └── ui/splitter.js
+│       └── Equi.entitlements
+└── web-editor/              # Vite 源码
 ```
 
-### 在 Xcode 中组织
-
-1. **推荐：XcodeGen**
-   ```bash
-   brew install xcodegen
-   cd <repo>
-   xcodegen generate
-   open MarkdownDualEditor.xcodeproj
-   ```
-2. **手动创建工程**
-   - File → New → Project → macOS → App（SwiftUI，最低 macOS 13）
-   - 将 `MarkdownDualEditor/` 下 Swift 文件按文件夹加入 Target
-   - 将整个 `Resources/Editor` **以 Folder Reference（蓝色文件夹）** 加入 *Copy Bundle Resources*，保证运行时路径为 `…/Contents/Resources/Editor/index.html`
-   - 设置 `Info.plist`、`Entitlements`、Deployment Target = 13.0
-3. **Cursor**：直接编辑本仓库；前端在 `web-editor/` 用 Vite 开发，Swift 在 macOS 上用 Xcode 编译运行。
-
-### 构建前端 Bundle
+### Xcode
 
 ```bash
-cd web-editor
-npm install
-npm run build   # 输出到 MarkdownDualEditor/Resources/Editor
+brew install xcodegen
+xcodegen generate
+open Equi.xcodeproj
 ```
 
-浏览器调试：`npm run dev`（无 `webkit.messageHandlers` 时自动加载欢迎文稿）。
+`Equi/Resources/Editor` 须以 **Folder Reference（蓝色文件夹）** 加入 Copy Bundle Resources。
+
+### 仅构建前端
+
+```bash
+./scripts/build-editor.sh
+```
 
 ---
 
-## 架构说明
-
-### 1. 原生外壳
+## 架构要点
 
 | 模块 | 职责 |
 |------|------|
-| `DocumentModel` | 文档字符串、文件 URL、dirty、字数；`NSOpenPanel` / `NSSavePanel` |
-| `WebViewBridge` | `WKWebView` 配置、加载本地 HTML、`editorBridge` 消息、`evaluateJavaScript` |
-| `EditorCommandBus` | 工具栏 / 菜单 → undo/redo/focus |
-| `WindowChrome` | 透明标题栏 + unified toolbar |
-| `ContentView` | 工具栏、状态栏、桥接宿主 |
+| `DocumentModel` | 文档 / 路径 / dirty / 字数；Open/Save Panel |
+| `WebViewBridge` | WKWebView、本地 Bundle、`editorBridge` |
+| `EditorCommandBus` | 菜单 / 工具栏 → undo/redo/focus |
+| Sync Engine | `sourceOfTruth` 焦点锁 + debounce + 滚动同步 |
 
-### 2. 双向同步协议（Sync Lock）
+详见 `docs/SYNC_PROTOCOL.md`、`docs/WEBKIT_SECURITY.md`。
 
-```
-sourceOfTruth ∈ { source | wysiwyg | none }
-
-焦点在左 → sourceOfTruth = source
-  左栏变更 ─debounce─→ markdownToHtml → TipTap.setHtmlSilent
-  右栏 onUpdate 被忽略（不回写）
-
-焦点在右 → sourceOfTruth = wysiwyg
-  右栏变更 ─debounce─→ htmlToMarkdown → CodeMirror.setMarkdownSilent
-  左栏 onChange 被忽略
-
-Swift setMarkdown → sourceOfTruth = none，两侧静默灌入
-```
-
-- `syncLock` + `requestAnimationFrame` 防止同一次写入引发回声死循环
-- 静默写入保留选区映射，活跃侧光标不因对侧更新而跳动
-- 滚动按 `scrollTop / (scrollHeight - clientHeight)` 百分比互相同步
-
-### 3. Markdown 互转
-
-官方包 `@tiptap/extension-markdown` 在 npm 上不存在；社区 `tiptap-markdown` 需要 TipTap v3。
-
-本项目采用：
-
-- **marked**（GFM）：Markdown → HTML → TipTap `setContent`
-- **turndown + turndown-plugin-gfm**：TipTap HTML → Markdown
-
-等价于「AST / HTML 中转」互转层，离线可控、API 稳定。
-
-### 4. Swift ↔ JS 通道
-
-**JS → Swift**
-
-```js
-window.webkit.messageHandlers.editorBridge.postMessage({
-  type: 'contentChange', // ready | dirty | log
-  markdown, dirty, wordCount, characterCount
-})
-```
-
-**Swift → JS**
-
-```swift
-webView.evaluateJavaScript("window.EditorAPI.setMarkdown({markdown, revision, markClean})")
-// 另有：undo() / redo() / focusPane('source'|'wysiwyg')
-```
-
----
-
-## WebKit 本地资源安全策略
-
-详见 [`docs/WEBKIT_SECURITY.md`](docs/WEBKIT_SECURITY.md)。要点：
-
-```swift
-config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
-webView.loadFileURL(indexURL, allowingReadAccessTo: editorDirectory)
-```
-
-配合 HTML CSP（`default-src 'none'; script-src 'self'; connect-src 'none'`）与导航代理（拦截非 `file://` / `about:`），保证编辑器离线且不偷偷出网。
-
----
-
-## 运行要求
+## 要求
 
 - macOS 13+
 - Xcode 15+
-- Node.js 20+（仅构建前端时需要）
+- Node.js 20+（构建前端 / 打 DMG 时）
 
 ## 许可
 

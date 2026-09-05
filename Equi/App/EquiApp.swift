@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MarkdownDualEditorApp: App {
+struct EquiApp: App {
     @StateObject private var document = DocumentModel()
     @StateObject private var commands = EditorCommandBus()
 
@@ -48,6 +48,6 @@ struct MarkdownDualEditorApp: App {
 }
 
 extension Notification.Name {
-    static let editorUndo = Notification.Name("MarkdownDualEditor.undo")
-    static let editorRedo = Notification.Name("MarkdownDualEditor.redo")
+    static let editorUndo = Notification.Name("Equi.undo")
+    static let editorRedo = Notification.Name("Equi.redo")
 }

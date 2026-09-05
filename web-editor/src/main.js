@@ -92,7 +92,7 @@ window.EditorAPI = {
 };
 
 // 初始欢迎文稿（仅开发态；正式由 Swift setMarkdown 覆盖）
-const welcome = `# Markdown Dual Editor
+const welcome = `# Equi
 
 左侧编辑 **原始 Markdown**，右侧进行所见即所得排版。
 

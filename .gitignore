@@ -1,5 +1,9 @@
 node_modules/
 dist/
+build/
+*.dmg
+Equi.xcodeproj/
+*.xcworkspace/
 .DS_Store
 *.xcuserstate
 xcuserdata/
@@ -22,3 +26,4 @@ DerivedData/
 .idea/
 web-editor/dist/
 *.log
+*.map

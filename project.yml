@@ -1,6 +1,6 @@
-name: MarkdownDualEditor
+name: Equi
 options:
-  bundleIdPrefix: com.example
+  bundleIdPrefix: com.leoxw
   deploymentTarget:
     macOS: "13.0"
   createIntermediateGroups: true
@@ -12,32 +12,34 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "13.0"
     CODE_SIGN_STYLE: Automatic
     ENABLE_HARDENED_RUNTIME: YES
-    PRODUCT_NAME: Markdown Dual Editor
+    PRODUCT_NAME: Equi
 
 targets:
-  MarkdownDualEditor:
+  Equi:
     type: application
     platform: macOS
     sources:
-      - path: MarkdownDualEditor/App
-      - path: MarkdownDualEditor/Models
-      - path: MarkdownDualEditor/Bridge
-      - path: MarkdownDualEditor/Views
-      - path: MarkdownDualEditor/Supporting
+      - path: Equi/App
+      - path: Equi/Models
+      - path: Equi/Bridge
+      - path: Equi/Views
+      - path: Equi/Supporting
         excludes:
           - Info.plist
           - "*.entitlements"
     resources:
-      - path: MarkdownDualEditor/Resources/Editor
+      - path: Equi/Resources/Editor
         type: folder
         buildPhase: resources
-      - path: MarkdownDualEditor/Supporting/Assets.xcassets
+      - path: Equi/Supporting/Assets.xcassets
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.MarkdownDualEditor
-        INFOPLIST_FILE: MarkdownDualEditor/Supporting/Info.plist
-        CODE_SIGN_ENTITLEMENTS: MarkdownDualEditor/Supporting/MarkdownDualEditor.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.leoxw.Equi
+        INFOPLIST_FILE: Equi/Supporting/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Equi/Supporting/Equi.entitlements
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         GENERATE_INFOPLIST_FILE: NO
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"

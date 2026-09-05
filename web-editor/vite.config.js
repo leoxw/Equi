@@ -6,7 +6,7 @@ export default defineConfig({
   root: '.',
   base: './',
   build: {
-    outDir: path.resolve(__dirname, '../MarkdownDualEditor/Resources/Editor'),
+    outDir: path.resolve(__dirname, '../Equi/Resources/Editor'),
     emptyOutDir: true,
     assetsDir: 'assets',
     sourcemap: false,

@@ -27,8 +27,9 @@ struct WebViewBridge: NSViewRepresentable {
 
         let bootstrap = WKUserScript(
             source: """
-            window.__MARKDOWN_DUAL_EDITOR__ = {
+            window.__EQUI_EDITOR__ = {
               platform: 'macos',
+              app: 'Equi',
               bridgeReady: true
             };
             """,
