@@ -1,53 +1,83 @@
 import SwiftUI
+import AppKit
 
 @main
 struct EquiApp: App {
-    @StateObject private var document = DocumentModel()
-    @StateObject private var commands = EditorCommandBus()
-
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environmentObject(document)
-                .environmentObject(commands)
+        // 每个窗口/标签页各自一份 DocumentWorkspaceView → 各自独立 DocumentModel
+        WindowGroup(id: "document") {
+            DocumentWorkspaceView()
                 .frame(minWidth: 880, minHeight: 560)
                 .background(WindowChromeConfigurator())
         }
         .windowStyle(.automatic)
         .windowToolbarStyle(.unified)
         .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("新建") { document.newDocument() }
-                    .keyboardShortcut("n", modifiers: .command)
-
-                Button("打开…") { document.openDocument() }
-                    .keyboardShortcut("o", modifiers: .command)
-            }
-
-            CommandGroup(replacing: .saveItem) {
-                Button("存储") { _ = document.save() }
-                    .keyboardShortcut("s", modifiers: .command)
-
-                Button("存储为…") { _ = document.saveAs() }
-                    .keyboardShortcut("s", modifiers: [.command, .shift])
-            }
-
-            CommandGroup(replacing: .undoRedo) {
-                Button("撤销") {
-                    NotificationCenter.default.post(name: .editorUndo, object: nil)
-                }
-                .keyboardShortcut("z", modifiers: .command)
-
-                Button("重做") {
-                    NotificationCenter.default.post(name: .editorRedo, object: nil)
-                }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-            }
+            EquiCommands()
         }
     }
 }
 
-extension Notification.Name {
-    static let editorUndo = Notification.Name("Equi.undo")
-    static let editorRedo = Notification.Name("Equi.redo")
+/// 单个窗口的根视图：文档与命令总线按窗口隔离，避免多标签共用一份状态。
+struct DocumentWorkspaceView: View {
+    @StateObject private var document = DocumentModel()
+    @StateObject private var commands = EditorCommandBus()
+
+    var body: some View {
+        ContentView()
+            .environmentObject(document)
+            .environmentObject(commands)
+            .focusedSceneObject(document)
+            .focusedSceneObject(commands)
+    }
+}
+
+/// 菜单命令作用于「当前焦点窗口」的文档，而不是全局单例。
+struct EquiCommands: Commands {
+    @FocusedObject private var document: DocumentModel?
+    @FocusedObject private var commands: EditorCommandBus?
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("新建") {
+                openWindow(id: "document")
+            }
+            .keyboardShortcut("n", modifiers: .command)
+
+            Button("打开…") {
+                document?.openDocument()
+            }
+            .keyboardShortcut("o", modifiers: .command)
+            .disabled(document == nil)
+        }
+
+        CommandGroup(replacing: .saveItem) {
+            Button("存储") {
+                _ = document?.save()
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .disabled(document == nil)
+
+            Button("存储为…") {
+                _ = document?.saveAs()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled(document == nil)
+        }
+
+        CommandGroup(replacing: .undoRedo) {
+            Button("撤销") {
+                commands?.undo()
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(commands == nil)
+
+            Button("重做") {
+                commands?.redo()
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(commands == nil)
+        }
+    }
 }

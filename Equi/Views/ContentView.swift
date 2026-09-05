@@ -4,10 +4,11 @@ import AppKit
 struct ContentView: View {
     @EnvironmentObject private var document: DocumentModel
     @EnvironmentObject private var commands: EditorCommandBus
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorToolbar()
+            EditorToolbar(openNewWindow: { openWindow(id: "document") })
             Divider()
             editorStatusBanner
             editorPane
@@ -15,15 +16,13 @@ struct ContentView: View {
             statusBar
         }
         .navigationTitle(document.windowTitle)
-        .onReceive(NotificationCenter.default.publisher(for: .editorUndo)) { _ in
-            commands.undo()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .editorRedo)) { _ in
-            commands.redo()
-        }
-        .onAppear { applyWindowTitle() }
-        .onChange(of: document.windowTitle) { _ in applyWindowTitle() }
-        .onChange(of: document.isDirty) { _ in applyWindowTitle() }
+        // 把标题写到本窗口，而不是 NSApp.keyWindow（多标签会串名）
+        .background(
+            WindowTitleBinder(
+                title: document.windowTitle,
+                representedURL: document.fileURL
+            )
+        )
     }
 
     /// 顶栏状态：绝不盖住 WebView，否则失败页/探针会被挡住，看起来像“一直加载”。
@@ -113,11 +112,6 @@ struct ContentView: View {
         .padding(.vertical, 6)
         .background(.bar)
     }
-
-    private func applyWindowTitle() {
-        NSApp.keyWindow?.title = document.windowTitle
-        NSApp.keyWindow?.representedURL = document.fileURL
-    }
 }
 
 // MARK: - Toolbar
@@ -125,18 +119,19 @@ struct ContentView: View {
 struct EditorToolbar: View {
     @EnvironmentObject private var document: DocumentModel
     @EnvironmentObject private var commands: EditorCommandBus
+    var openNewWindow: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            Button { document.newDocument() } label: {
+            Button(action: openNewWindow) {
                 Label("新建", systemImage: "doc.badge.plus")
             }
-            .help("新建 (⌘N)")
+            .help("新建窗口 (⌘N)")
 
             Button { document.openDocument() } label: {
                 Label("打开", systemImage: "folder")
             }
-            .help("打开 (⌘O)")
+            .help("在当前窗口打开 (⌘O)")
 
             Button { _ = document.save() } label: {
                 Label("存储", systemImage: "square.and.arrow.down")
