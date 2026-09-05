@@ -31,14 +31,49 @@ targets:
           - Info.plist
           - "*.entitlements"
     resources:
-      # 文件夹引用：保留 Editor/ 目录结构
+      # 文件夹引用：保留 Editor/ 目录结构（部分 Xcode/XcodeGen 组合会漏拷，见下方脚本兜底）
       - path: Equi/Resources/Editor
         type: folder
         buildPhase: resources
-      # 扁平单文件兜底：沙盒 App 读自己 Bundle 根级资源最稳妥
+      # 扁平单文件：Bundle 根级 EquiEditor.html
       - path: Equi/Resources/EquiEditor.html
         buildPhase: resources
       - path: Equi/Supporting/Assets.xcassets
+    # 强制把编辑器 HTML 拷进 .app/Contents/Resources（解决 Resources 为空）
+    # 使用 postBuildScripts：在 Copy Bundle Resources 之后执行，避免被覆盖/漏拷
+    postBuildScripts:
+      - name: Embed Editor HTML
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          SRC="${SRCROOT}/Equi/Resources"
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "${DEST}/Editor"
+
+          if [[ ! -f "${SRC}/EquiEditor.html" ]]; then
+            echo "error: 缺少 ${SRC}/EquiEditor.html — 请先运行 ./scripts/build-editor.sh" >&2
+            exit 1
+          fi
+          if [[ ! -f "${SRC}/Editor/index.html" ]]; then
+            echo "error: 缺少 ${SRC}/Editor/index.html — 请先运行 ./scripts/build-editor.sh" >&2
+            exit 1
+          fi
+
+          cp -f "${SRC}/EquiEditor.html" "${DEST}/EquiEditor.html"
+          cp -f "${SRC}/Editor/index.html" "${DEST}/Editor/index.html"
+          if [[ -d "${SRC}/Editor/assets" ]]; then
+            mkdir -p "${DEST}/Editor/assets"
+            cp -f "${SRC}/Editor/assets/"* "${DEST}/Editor/assets/" 2>/dev/null || true
+          fi
+
+          echo "[Equi] Embedded editor HTML → ${DEST}"
+          ls -la "${DEST}/EquiEditor.html" "${DEST}/Editor/index.html"
+          # 基本完整性：内联后应远大于 100KB
+          SIZE=$(wc -c < "${DEST}/EquiEditor.html" | tr -d ' ')
+          if [[ "${SIZE}" -lt 100000 ]]; then
+            echo "error: EquiEditor.html 过小 (${SIZE} bytes)，构建可能不完整" >&2
+            exit 1
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.leoxw.Equi

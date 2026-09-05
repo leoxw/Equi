@@ -30,10 +30,16 @@ open Equi.xcodeproj
 
 cat <<'EOF'
 
-下一步：
-1. Xcode 左上角 Scheme 选择器选中「Equi」
+下一步（必须按顺序）：
+1. Xcode 左上角 Scheme 选中「Equi」
 2. Product → Clean Build Folder（⇧⌘K）
-3. Product → Run（⌘R）
+3. Product → Build（⌘B）—— 编译日志里应出现：
+      [Equi] Embedded editor HTML → .../Equi.app/Contents/Resources
+4. Product → Run（⌘R）
 
-若 Scheme 仍为空：Manage Schemes… → 勾选 Equi 的 Shared。
+若仍报 Editor Bundle 未找到：
+  ls "DerivedData/.../Equi.app/Contents/Resources"
+  应能看到 EquiEditor.html 和 Editor/index.html
+
+若 Scheme 为空：Manage Schemes… → 勾选 Equi 的 Shared。
 EOF
