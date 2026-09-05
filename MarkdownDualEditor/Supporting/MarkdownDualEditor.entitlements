@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 沙盒 App：用户选中的文件通过 NSOpen/SavePanel 的 security-scoped bookmark 访问 -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<!-- 不需要出网；编辑器完全离线 -->
+	<key>com.apple.security.network.client</key>
+	<false/>
+</dict>
+</plist>
