@@ -27,3 +27,9 @@ DerivedData/
 web-editor/dist/
 *.log
 *.map
+
+# Windows Electron
+equi-win/node_modules/
+equi-win/dist/
+equi-win/resources/EquiEditor.html
+equi-win/resources/Editor/

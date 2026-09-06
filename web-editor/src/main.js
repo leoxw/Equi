@@ -10,7 +10,7 @@ import { installSplitter } from './ui/splitter.js';
 import { installFormatContextMenu } from './ui/format-context-menu.js';
 import { installOutlineNav } from './ui/outline-nav.js';
 import { installPreviewZoom } from './ui/preview-zoom.js';
-import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
+import { notifyReady, logToSwift, notifyLoadError, hasNativeBridge } from './bridge.js';
 
 function boot() {
   const sourceHost = document.getElementById('source-editor');
@@ -236,10 +236,11 @@ function boot() {
 console.log('离线 Bundle，无外网依赖');
 \`\`\`
 
-> 通过 Cmd+O / Cmd+S 由 macOS 原生层管理文件。
+> 通过 Cmd/Ctrl+O / Cmd/Ctrl+S 由系统原生层管理文件。
 `;
 
-  if (!window.webkit?.messageHandlers?.editorBridge) {
+  // 有原生桥时由宿主注入欢迎文案 / 打开的文件，避免与 DocumentModel 抢写
+  if (!hasNativeBridge()) {
     sync.setMarkdownFromNative({ markdown: welcome, revision: 0, markClean: true });
   }
 

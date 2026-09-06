@@ -1,0 +1,62 @@
+:root {
+  --bg: #f6f5f2;
+  --bar: rgba(246, 245, 242, 0.92);
+  --border: rgba(10, 122, 92, 0.14);
+  --text: #1c1c1c;
+  --muted: #6b6b6b;
+  --accent: #0a7a5c;
+  --warn: #c45c26;
+  --danger-bg: rgba(196, 92, 38, 0.12);
+  --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --bar: rgba(28, 28, 30, 0.94);
+    --border: rgba(61, 207, 154, 0.18);
+    --text: #f2f2f2;
+    --muted: #a0a0a0;
+    --danger-bg: rgba(255, 159, 10, 0.14);
+  }
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  font-family: var(--font); color: var(--text); background: var(--bg); user-select: none;
+}
+body { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; }
+.toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; background: var(--bar); border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+.group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.group.right { margin-left: auto; }
+.title {
+  flex: 1; text-align: center; font-weight: 600; font-size: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.toolbar button {
+  appearance: none; border: 1px solid transparent; background: transparent;
+  color: var(--text); font: inherit; font-size: 12px; padding: 5px 9px;
+  border-radius: 6px; cursor: pointer;
+}
+.toolbar button:hover { background: rgba(10,122,92,.1); border-color: var(--border); }
+.toolbar button:disabled { opacity: .4; cursor: default; }
+.sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; }
+.banner {
+  padding: 8px 12px; font-size: 12px; color: var(--warn);
+  background: var(--danger-bg); border-bottom: 1px solid var(--border); white-space: pre-wrap;
+}
+.banner.loading { color: var(--muted); background: var(--bar); }
+.editor-host { position: relative; min-height: 0; background: var(--bg); }
+.editor { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.statusbar {
+  display: flex; align-items: center; gap: 16px; padding: 6px 12px;
+  font-size: 12px; color: var(--muted); background: var(--bar); border-top: 1px solid var(--border);
+}
+.statusbar .path { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statusbar .spacer { flex: 1; }
+.statusbar .dirty { color: var(--warn); }
+.statusbar .ready { color: var(--accent); }
+body.mode-plain .md-only { display: none !important; }

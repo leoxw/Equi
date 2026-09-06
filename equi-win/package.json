@@ -1,0 +1,48 @@
+{
+  "name": "equi",
+  "productName": "Equi",
+  "version": "1.0.0",
+  "description": "Windows dual-pane Markdown editor (CodeMirror 6 + TipTap)",
+  "main": "electron/main.js",
+  "author": "leoxw",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.leoxw.Equi",
+    "productName": "Equi",
+    "copyright": "Copyright © Equi",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["electron/**/*", "shell/**/*", "resources/**/*", "package.json"],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Equi-${version}-${os}-${arch}.${ext}",
+      "fileAssociations": [
+        { "ext": "md", "name": "Markdown", "description": "Markdown Document", "role": "Editor" },
+        { "ext": "markdown", "name": "Markdown", "description": "Markdown Document", "role": "Editor" },
+        { "ext": "txt", "name": "Text", "description": "Plain Text Document", "role": "Editor" }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Equi"
+    }
+  },
+  "devDependencies": {
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
