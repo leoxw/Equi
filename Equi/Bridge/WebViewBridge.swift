@@ -88,7 +88,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        bindCommands()
+        bindSubscriptions()
     }
 
     override func viewDidAppear() {
@@ -106,10 +106,12 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
     }
 
     func syncModels(document: DocumentModel, commands: EditorCommandBus) {
+        let documentChanged = self.document !== document
+        let commandsChanged = self.commands !== commands
         self.document = document
-        if self.commands !== commands {
-            self.commands = commands
-            bindCommands()
+        self.commands = commands
+        if documentChanged || commandsChanged || cancellables.isEmpty {
+            bindSubscriptions()
         }
         pushEditingModeIfNeeded()
         pushNativeContentIfNeeded()
@@ -123,7 +125,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         evaluateCall("window.EditorAPI && window.EditorAPI.setEditingMode", payload: ["mode": mode])
     }
 
-    private func bindCommands() {
+    private func bindSubscriptions() {
         cancellables.removeAll()
         commands.$ticket
             .compactMap { $0 }
@@ -132,6 +134,17 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 guard let self, ticket != self.lastTicket else { return }
                 self.lastTicket = ticket
                 self.handle(command)
+            }
+            .store(in: &cancellables)
+
+        // Finder 打开文件常在 editor ready 之后才 load；必须监听文档变更并推入 WebView
+        document.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.pushEditingModeIfNeeded()
+                    self?.pushNativeContentIfNeeded()
+                }
             }
             .store(in: &cancellables)
     }
@@ -347,7 +360,12 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 self.document.markEditorReady()
                 self.lastPushedRevision = 0
                 self.lastPushedMode = nil
-                if self.document.content.isEmpty {
+                // Finder「打开方式」可能稍晚入队：有待打开文件或已有路径时不要盖欢迎页
+                let shouldWelcome =
+                    self.document.content.isEmpty
+                    && self.document.fileURL == nil
+                    && !OpenFileRouter.shared.hasPending
+                if shouldWelcome {
                     let welcome = """
                     # Equi
 

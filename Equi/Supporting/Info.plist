@@ -28,6 +28,9 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Finder「打开方式」/ 双击打开文档 -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -40,13 +43,34 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>net.daringfireball.markdown</string>
+				<string>public.markdown</string>
 				<string>public.plain-text</string>
+				<string>public.text</string>
+				<string>public.source-code</string>
+				<string>public.json</string>
+				<string>public.xml</string>
+				<string>public.data</string>
 			</array>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>md</string>
 				<string>markdown</string>
 				<string>mdown</string>
+				<string>mkd</string>
+				<string>txt</string>
+				<string>text</string>
+				<string>json</string>
+				<string>xml</string>
+				<string>csv</string>
+				<string>log</string>
+				<string>swift</string>
+				<string>js</string>
+				<string>ts</string>
+				<string>css</string>
+				<string>html</string>
+				<string>yml</string>
+				<string>yaml</string>
+				<string>toml</string>
 			</array>
 		</dict>
 	</array>

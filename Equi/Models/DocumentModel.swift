@@ -117,12 +117,14 @@ final class DocumentModel: ObservableObject {
 
     @discardableResult
     func load(from url: URL) -> Bool {
+        // Finder「打开方式」会带上 security-scoped 权限；读取期间保持访问
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
         }
         do {
-            let text = try String(contentsOf: url, encoding: .utf8)
+            let data = try Data(contentsOf: url)
+            let text = String(decoding: data, as: UTF8.self)
             fileURL = url
             kind = DocumentKind.infer(from: url)
             replaceContent(text, markingClean: true)

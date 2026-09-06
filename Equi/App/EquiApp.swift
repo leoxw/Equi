@@ -3,8 +3,9 @@ import AppKit
 
 @main
 struct EquiApp: App {
+    @NSApplicationDelegateAdaptor(EquiAppDelegate.self) private var appDelegate
+
     var body: some Scene {
-        // 每个窗口/标签页各自一份 DocumentWorkspaceView → 各自独立 DocumentModel
         WindowGroup(id: "document") {
             DocumentWorkspaceView()
                 .frame(minWidth: 880, minHeight: 560)
@@ -15,13 +16,16 @@ struct EquiApp: App {
         .commands {
             EquiCommands()
         }
+        .handlesExternalEvents(matching: Set(arrayLiteral: "*"))
     }
 }
 
-/// 单个窗口的根视图：文档与命令总线按窗口隔离，避免多标签共用一份状态。
+/// 单窗口根视图：隔离 DocumentModel，并消费 Finder 传入的待打开文件。
 struct DocumentWorkspaceView: View {
     @StateObject private var document = DocumentModel()
     @StateObject private var commands = EditorCommandBus()
+    @ObservedObject private var openRouter = OpenFileRouter.shared
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ContentView()
@@ -29,10 +33,51 @@ struct DocumentWorkspaceView: View {
             .environmentObject(commands)
             .focusedSceneObject(document)
             .focusedSceneObject(commands)
+            .onAppear {
+                consumePendingFileIfNeeded()
+                // Launch Services 有时晚于首屏；短延迟再取一次
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    consumePendingFileIfNeeded()
+                }
+            }
+            .onChange(of: openRouter.epoch) { _ in
+                consumePendingFileIfNeeded()
+            }
+            .onOpenURL { url in
+                guard url.isFileURL else { return }
+                openIncomingFile(url)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: OpenFileRouter.requestNewWindow)) { _ in
+                guard openRouter.hasPending else { return }
+                if canReuseCurrentDocument {
+                    consumePendingFileIfNeeded()
+                } else if openRouter.claimNewWindow() {
+                    openWindow(id: "document")
+                }
+            }
+    }
+
+    /// 空文档或仅欢迎页时可直接载入；已有关联文件 / 未保存编辑则开新窗。
+    private var canReuseCurrentDocument: Bool {
+        document.fileURL == nil && !document.isDirty
+    }
+
+    private func consumePendingFileIfNeeded() {
+        guard canReuseCurrentDocument else { return }
+        guard let url = openRouter.dequeue() else { return }
+        _ = document.load(from: url)
+    }
+
+    private func openIncomingFile(_ url: URL) {
+        if canReuseCurrentDocument {
+            _ = document.load(from: url)
+        } else {
+            OpenFileRouter.shared.enqueue([url])
+            openWindow(id: "document")
+        }
     }
 }
 
-/// 菜单命令作用于「当前焦点窗口」的文档，而不是全局单例。
 struct EquiCommands: Commands {
     @FocusedObject private var document: DocumentModel?
     @FocusedObject private var commands: EditorCommandBus?
