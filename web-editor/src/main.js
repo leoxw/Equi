@@ -83,8 +83,14 @@ function boot() {
     outline = installOutlineNav({
       root: outlineHost,
       getEditor: () => wysiwyg.editor,
-      onNavigate: () => {
+      onNavigate: (item) => {
         sync.setFocus('wysiwyg');
+        // 同步左侧源码跳到对应标题，便于对照编辑
+        try {
+          source.revealHeading?.({ level: item.level, text: item.text });
+        } catch {
+          // ignore
+        }
       },
     });
   }
@@ -198,19 +204,17 @@ function boot() {
     },
     toggleOutline(payload) {
       const force = typeof payload === 'boolean' ? payload : payload?.collapsed;
-      if (typeof force === 'boolean') {
-        document.body.classList.toggle('outline-collapsed', force);
+      const next =
+        typeof force === 'boolean'
+          ? force
+          : !document.body.classList.contains('outline-collapsed');
+      if (outline?.setCollapsed) {
+        outline.setCollapsed(next);
       } else {
-        document.body.classList.toggle('outline-collapsed');
+        document.body.classList.toggle('outline-collapsed', next);
+        window.dispatchEvent(new Event('resize'));
       }
-      const collapsed = document.body.classList.contains('outline-collapsed');
-      const btn = document.querySelector('.outline-nav-toggle');
-      if (btn) {
-        btn.textContent = collapsed ? '›' : '‹';
-        btn.title = collapsed ? '展开目录' : '折叠目录';
-      }
-      window.dispatchEvent(new Event('resize'));
-      return { collapsed };
+      return { collapsed: document.body.classList.contains('outline-collapsed') };
     },
   };
 

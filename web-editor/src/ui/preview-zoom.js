@@ -64,9 +64,39 @@ export function installPreviewZoom({
     setZoom(1);
   }
 
-  minusBtn?.addEventListener('click', zoomOut);
-  plusBtn?.addEventListener('click', zoomIn);
-  resetBtn?.addEventListener('click', reset);
+  minusBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    zoomOut();
+  });
+  plusBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    zoomIn();
+  });
+  resetBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    reset();
+  });
+
+  // 键盘：⌘/Ctrl + = / - / 0（仅 Markdown 预览模式）
+  const onKey = (e) => {
+    if (document.body.classList.contains('mode-plain')) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    if (e.key === '=' || e.key === '+') {
+      e.preventDefault();
+      zoomIn();
+    } else if (e.key === '-') {
+      e.preventDefault();
+      zoomOut();
+    } else if (e.key === '0') {
+      e.preventDefault();
+      reset();
+    }
+  };
+  window.addEventListener('keydown', onKey);
 
   apply();
 
@@ -76,5 +106,8 @@ export function installPreviewZoom({
     zoomIn,
     zoomOut,
     reset,
+    destroy() {
+      window.removeEventListener('keydown', onKey);
+    },
   };
 }

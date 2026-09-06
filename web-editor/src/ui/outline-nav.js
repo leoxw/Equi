@@ -2,6 +2,8 @@
  * 左侧目录导航：从 TipTap 文档提取标题，点击跳转。
  */
 
+const COLLAPSE_KEY = 'equi.outlineCollapsed';
+
 /**
  * @param {{
  *   root: HTMLElement,
@@ -27,12 +29,30 @@ export function installOutlineNav({ root, getEditor, onNavigate }) {
   let lastFingerprint = '';
   let raf = 0;
 
-  toggle?.addEventListener('click', () => {
-    document.body.classList.toggle('outline-collapsed');
-    const collapsed = document.body.classList.contains('outline-collapsed');
-    toggle.textContent = collapsed ? '›' : '‹';
-    toggle.title = collapsed ? '展开目录' : '折叠目录';
+  function setCollapsed(collapsed) {
+    document.body.classList.toggle('outline-collapsed', collapsed);
+    if (toggle) {
+      toggle.textContent = collapsed ? '›' : '‹';
+      toggle.title = collapsed ? '展开目录' : '折叠目录';
+    }
+    try {
+      localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
+    } catch {
+      // ignore
+    }
     window.dispatchEvent(new Event('resize'));
+  }
+
+  try {
+    if (localStorage.getItem(COLLAPSE_KEY) === '1') {
+      setCollapsed(true);
+    }
+  } catch {
+    // ignore
+  }
+
+  toggle?.addEventListener('click', () => {
+    setCollapsed(!document.body.classList.contains('outline-collapsed'));
   });
 
   function extractHeadings(editor) {
@@ -73,9 +93,7 @@ export function installOutlineNav({ root, getEditor, onNavigate }) {
       btn.dataset.pos = String(item.pos);
       btn.title = item.text;
       btn.innerHTML = `<span class="outline-item-text">${escapeHtml(item.text)}</span>`;
-      btn.addEventListener('click', () => {
-        navigateTo(item);
-      });
+      btn.addEventListener('click', () => navigateTo(item));
       frag.appendChild(btn);
     }
     body.appendChild(frag);
@@ -102,15 +120,22 @@ export function installOutlineNav({ root, getEditor, onNavigate }) {
     if (!body) return;
     body.querySelectorAll('.outline-item').forEach((el) => {
       const pos = Number(el.dataset.pos);
-      el.classList.toggle('is-active', pos === activePos);
+      const active = pos === activePos;
+      el.classList.toggle('is-active', active);
+      if (active) {
+        try {
+          el.scrollIntoView({ block: 'nearest' });
+        } catch {
+          // ignore
+        }
+      }
     });
   }
 
   function refresh() {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => {
-      const editor = getEditor?.();
-      render(extractHeadings(editor));
+      render(extractHeadings(getEditor?.()));
     });
   }
 
@@ -142,6 +167,7 @@ export function installOutlineNav({ root, getEditor, onNavigate }) {
   return {
     refresh,
     syncActiveFromScroll,
+    setCollapsed,
     destroy() {
       cancelAnimationFrame(raf);
       root.innerHTML = '';

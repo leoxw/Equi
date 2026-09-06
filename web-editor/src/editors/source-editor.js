@@ -120,12 +120,54 @@ export function createSourceEditor(parent, { onChange, onFocus, onBlur, onScroll
     scroller.scrollTop = Math.max(0, Math.min(1, ratio)) * max;
   }
 
+  /**
+   * 跳转到匹配的 Markdown 标题行（目录点击联动）。
+   * @param {{ level: number, text: string }} heading
+   */
+  function revealHeading({ level, text }) {
+    const doc = view.state.doc;
+    const needle = (text || '').trim();
+    if (!needle) return false;
+    const wantLevel = Number(level) || 0;
+    let matchFrom = -1;
+    for (let i = 1; i <= doc.lines; i += 1) {
+      const line = doc.line(i);
+      const m = /^(#{1,6})\s+(.*)$/.exec(line.text);
+      if (!m) continue;
+      const lv = m[1].length;
+      const title = m[2].trim();
+      if (title !== needle) continue;
+      if (wantLevel && lv !== wantLevel) continue;
+      matchFrom = line.from;
+      break;
+    }
+    if (matchFrom < 0) {
+      // 级别不匹配时退化为仅按标题文本匹配
+      for (let i = 1; i <= doc.lines; i += 1) {
+        const line = doc.line(i);
+        const m = /^(#{1,6})\s+(.*)$/.exec(line.text);
+        if (!m) continue;
+        if (m[2].trim() === needle) {
+          matchFrom = line.from;
+          break;
+        }
+      }
+    }
+    if (matchFrom < 0) return false;
+    view.dispatch({
+      selection: { anchor: matchFrom, head: matchFrom },
+      effects: EditorView.scrollIntoView(matchFrom, { y: 'start', yMargin: 24 }),
+    });
+    return true;
+  }
+
   return {
     view,
     getMarkdown,
     setMarkdownSilent,
     getScrollRatio,
     setScrollRatio,
+    revealHeading,
     focus: () => view.focus(),
     undo: () => undo(view),
     redo: () => redo(view),

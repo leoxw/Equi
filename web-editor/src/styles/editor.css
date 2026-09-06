@@ -147,20 +147,22 @@ body.outline-collapsed .pane-outline {
   font: inherit;
   cursor: pointer;
   border-radius: 6px;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .zoom-btn {
-  width: 24px;
-  height: 22px;
-  font-size: 14px;
+  width: 28px;
+  height: 26px;
+  font-size: 16px;
   line-height: 1;
   color: var(--muted);
 }
 
 .zoom-label {
-  min-width: 44px;
-  height: 22px;
-  padding: 0 4px;
+  min-width: 48px;
+  height: 26px;
+  padding: 0 6px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
@@ -170,6 +172,11 @@ body.outline-collapsed .pane-outline {
 .zoom-label:hover {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
+}
+
+.zoom-btn:active,
+.zoom-label:active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .editor-host {
