@@ -79,13 +79,23 @@ ${css}
 <body>
 <div data-equi-probe="1" style="position:fixed;z-index:99999;left:8px;top:8px;padding:4px 8px;border-radius:6px;font:11px -apple-system;background:#0a7a5c;color:#fff;opacity:.9">Equi WebView OK</div>
 <div id="app" class="app">
+  <aside class="pane pane-outline" id="pane-outline" aria-label="目录导航">
+    <div id="outline-nav" class="outline-nav-host"></div>
+  </aside>
   <div class="pane pane-source" id="pane-source">
     <div class="pane-label">Markdown</div>
     <div id="source-editor" class="editor-host"></div>
   </div>
   <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="调整分栏" tabindex="0"></div>
   <div class="pane pane-wysiwyg" id="pane-wysiwyg">
-    <div class="pane-label">所见即所得</div>
+    <div class="pane-toolbar">
+      <div class="pane-label">预览</div>
+      <div class="preview-zoom" role="group" aria-label="预览缩放">
+        <button type="button" id="zoom-out" class="zoom-btn" title="缩小预览" aria-label="缩小">−</button>
+        <button type="button" id="zoom-reset" class="zoom-label" title="重置为 100%">100%</button>
+        <button type="button" id="zoom-in" class="zoom-btn" title="放大预览" aria-label="放大">+</button>
+      </div>
+    </div>
     <div id="wysiwyg-editor" class="editor-host prose"></div>
   </div>
 </div>

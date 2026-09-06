@@ -9,6 +9,10 @@ final class EditorCommandBus: ObservableObject {
         case redo
         case focusSource
         case focusWysiwyg
+        case zoomIn
+        case zoomOut
+        case zoomReset
+        case toggleOutline
     }
 
     /// 递增序号，保证相同命令也能被 Combine 再次投递。
@@ -24,4 +28,8 @@ final class EditorCommandBus: ObservableObject {
     func redo() { send(.redo) }
     func focusSource() { send(.focusSource) }
     func focusWysiwyg() { send(.focusWysiwyg) }
+    func zoomIn() { send(.zoomIn) }
+    func zoomOut() { send(.zoomOut) }
+    func zoomReset() { send(.zoomReset) }
+    func toggleOutline() { send(.toggleOutline) }
 }

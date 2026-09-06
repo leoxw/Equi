@@ -1,5 +1,5 @@
 /**
- * 编辑器内核入口：组装双栏、同步引擎、Bridge API。
+ * 编辑器内核入口：组装目录、双栏、同步引擎、缩放与 Bridge API。
  */
 
 import './styles/editor.css';
@@ -8,6 +8,8 @@ import { createWysiwygEditor } from './editors/wysiwyg-editor.js';
 import { createSyncEngine } from './sync/sync-engine.js';
 import { installSplitter } from './ui/splitter.js';
 import { installFormatContextMenu } from './ui/format-context-menu.js';
+import { installOutlineNav } from './ui/outline-nav.js';
+import { installPreviewZoom } from './ui/preview-zoom.js';
 import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
 
 function boot() {
@@ -16,6 +18,7 @@ function boot() {
   const splitterEl = document.getElementById('splitter');
   const appEl = document.getElementById('app');
   const leftPane = document.getElementById('pane-source');
+  const outlineHost = document.getElementById('outline-nav');
 
   if (!sourceHost || !wysiwygHost || !appEl) {
     throw new Error('DOM 节点缺失：需要 #app / #source-editor / #wysiwyg-editor');
@@ -23,9 +26,13 @@ function boot() {
 
   /** 前向引用：sync 在 editors 之后创建 */
   const syncRef = { current: null };
+  let outline = null;
 
   const source = createSourceEditor(sourceHost, {
-    onChange: (md) => syncRef.current?.onSourceChange(md),
+    onChange: (md) => {
+      syncRef.current?.onSourceChange(md);
+      outline?.refresh();
+    },
     onFocus: () => syncRef.current?.setFocus('source'),
     onBlur: () => {
       setTimeout(() => {
@@ -38,7 +45,10 @@ function boot() {
   });
 
   const wysiwyg = createWysiwygEditor(wysiwygHost, {
-    onChange: (getHtml) => syncRef.current?.onWysiwygChange(getHtml),
+    onChange: (getHtml) => {
+      syncRef.current?.onWysiwygChange(getHtml);
+      outline?.refresh();
+    },
     onFocus: () => syncRef.current?.setFocus('wysiwyg'),
     onBlur: () => {
       setTimeout(() => {
@@ -47,7 +57,10 @@ function boot() {
         }
       }, 0);
     },
-    onScroll: (ratio) => syncRef.current?.onWysiwygScroll(ratio),
+    onScroll: (ratio) => {
+      syncRef.current?.onWysiwygScroll(ratio);
+      outline?.syncActiveFromScroll(wysiwygHost);
+    },
   });
 
   const sync = createSyncEngine({ source, wysiwyg });
@@ -66,13 +79,49 @@ function boot() {
   formatMenu.attachWysiwyg(wysiwygHost);
   formatMenu.attachSource(sourceHost);
 
+  if (outlineHost) {
+    outline = installOutlineNav({
+      root: outlineHost,
+      getEditor: () => wysiwyg.editor,
+      onNavigate: () => {
+        sync.setFocus('wysiwyg');
+      },
+    });
+  }
+
+  const zoom = installPreviewZoom({
+    target: wysiwygHost,
+    labelEl: document.getElementById('zoom-reset'),
+    minusBtn: document.getElementById('zoom-out'),
+    plusBtn: document.getElementById('zoom-in'),
+    resetBtn: document.getElementById('zoom-reset'),
+  });
+
+  // TipTap 事务后刷新目录（覆盖程序化 setContent）
+  wysiwyg.editor.on('update', () => outline?.refresh());
+  wysiwyg.editor.on('selectionUpdate', () => {
+    try {
+      const { $from } = wysiwyg.editor.state.selection;
+      for (let d = $from.depth; d > 0; d -= 1) {
+        const node = $from.node(d);
+        if (node.type.name === 'heading') {
+          outline?.refresh();
+          break;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  });
+
   window.EditorAPI = {
     setMarkdown(payload) {
       if (typeof payload === 'string') {
         sync.setMarkdownFromNative({ markdown: payload, markClean: true });
-        return;
+      } else {
+        sync.setMarkdownFromNative(payload ?? {});
       }
-      sync.setMarkdownFromNative(payload ?? {});
+      outline?.refresh();
     },
     getMarkdown() {
       return sync.getMarkdown();
@@ -114,8 +163,9 @@ function boot() {
       if (plain) {
         sync.setFocus('source');
         source.focus();
+      } else {
+        outline?.refresh();
       }
-      // 触发布局刷新，避免 CodeMirror 宽度停留在旧值
       requestAnimationFrame(() => {
         try {
           source.view.requestMeasure?.();
@@ -125,17 +175,58 @@ function boot() {
         window.dispatchEvent(new Event('resize'));
       });
     },
+    /** 预览缩放：0.7–2.0，或 'in' | 'out' | 'reset' */
+    setPreviewZoom(payload) {
+      if (payload === 'in' || payload?.action === 'in') {
+        zoom.zoomIn();
+        return zoom.getZoom();
+      }
+      if (payload === 'out' || payload?.action === 'out') {
+        zoom.zoomOut();
+        return zoom.getZoom();
+      }
+      if (payload === 'reset' || payload?.action === 'reset') {
+        zoom.reset();
+        return zoom.getZoom();
+      }
+      const value = typeof payload === 'number' ? payload : payload?.zoom;
+      if (value != null) zoom.setZoom(value);
+      return zoom.getZoom();
+    },
+    getPreviewZoom() {
+      return zoom.getZoom();
+    },
+    toggleOutline(payload) {
+      const force = typeof payload === 'boolean' ? payload : payload?.collapsed;
+      if (typeof force === 'boolean') {
+        document.body.classList.toggle('outline-collapsed', force);
+      } else {
+        document.body.classList.toggle('outline-collapsed');
+      }
+      const collapsed = document.body.classList.contains('outline-collapsed');
+      const btn = document.querySelector('.outline-nav-toggle');
+      if (btn) {
+        btn.textContent = collapsed ? '›' : '‹';
+        btn.title = collapsed ? '展开目录' : '折叠目录';
+      }
+      window.dispatchEvent(new Event('resize'));
+      return { collapsed };
+    },
   };
 
   const welcome = `# Equi
 
-左侧编辑 **原始 Markdown**，右侧进行所见即所得排版。
+左侧编辑 **原始 Markdown**，右侧预览排版对齐 Cursor 打开 Markdown 的阅读样式。
+
+## 目录与缩放
+
+- 最左侧为标题目录，点击可跳转
+- 右上角 \`-\` / \`%\` / \`+\` 可缩放预览字号
 
 ## 同步规则
 
 - 焦点在左侧时：源码 → 富文本（单向）
 - 焦点在右侧时：富文本 → 源码（单向）
-- 拖拽中间分隔条可调整分栏宽度
 
 \`\`\`js
 console.log('离线 Bundle，无外网依赖');
@@ -148,6 +239,7 @@ console.log('离线 Bundle，无外网依赖');
     sync.setMarkdownFromNative({ markdown: welcome, revision: 0, markClean: true });
   }
 
+  outline?.refresh();
   notifyReady();
   logToSwift('Editor kernel booted');
   source.focus();

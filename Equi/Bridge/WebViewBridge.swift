@@ -148,6 +148,14 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 return
             }
             evaluate("window.EditorAPI && window.EditorAPI.focusPane('wysiwyg')")
+        case .zoomIn:
+            evaluate("window.EditorAPI && window.EditorAPI.setPreviewZoom('in')")
+        case .zoomOut:
+            evaluate("window.EditorAPI && window.EditorAPI.setPreviewZoom('out')")
+        case .zoomReset:
+            evaluate("window.EditorAPI && window.EditorAPI.setPreviewZoom('reset')")
+        case .toggleOutline:
+            evaluate("window.EditorAPI && window.EditorAPI.toggleOutline()")
         }
     }
 

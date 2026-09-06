@@ -162,6 +162,30 @@ struct EditorToolbar: View {
 
             Spacer()
 
+            if document.kind.isMarkdown {
+                Button { commands.zoomOut() } label: {
+                    Label("缩小", systemImage: "minus.magnifyingglass")
+                }
+                .help("缩小预览")
+
+                Button { commands.zoomReset() } label: {
+                    Label("100%", systemImage: "arrow.counterclockwise")
+                }
+                .help("重置预览缩放")
+
+                Button { commands.zoomIn() } label: {
+                    Label("放大", systemImage: "plus.magnifyingglass")
+                }
+                .help("放大预览")
+
+                Button { commands.toggleOutline() } label: {
+                    Label("目录", systemImage: "list.bullet.rectangle")
+                }
+                .help("显示/隐藏目录")
+
+                Divider().frame(height: 16)
+            }
+
             Button { commands.focusSource() } label: {
                 Label("源码", systemImage: "chevron.left.forwardslash.chevron.right")
             }
