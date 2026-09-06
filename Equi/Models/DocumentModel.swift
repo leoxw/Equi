@@ -140,21 +140,29 @@ final class DocumentModel: ObservableObject {
     @discardableResult
     func saveAs() -> Bool {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.markdown, .plainText]
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue = fileURL?.lastPathComponent ?? "未命名.md"
-        panel.message = "将 Markdown 文档另存为"
+        panel.message = "选择保存位置与文件格式"
         panel.prompt = "存储"
+        panel.isExtensionHidden = false
+
+        let initialFormat = SaveFormatAccessory.Format.inferred(from: fileURL)
+        let defaultName: String = {
+            if let fileURL {
+                let base = fileURL.deletingPathExtension().lastPathComponent
+                return "\(base).\(initialFormat.pathExtension)"
+            }
+            return "未命名.\(initialFormat.pathExtension)"
+        }()
+        panel.nameFieldStringValue = defaultName
+
+        // 附件弹出菜单：Markdown (.md) / 纯文本 (.txt)；切换时同步扩展名
+        let accessory = SaveFormatAccessory(initial: initialFormat)
+        accessory.attach(to: panel)
 
         guard panel.runModal() == .OK, let url = panel.url else {
             return false
         }
-        // 确保 .md 扩展名
-        var target = url
-        if target.pathExtension.isEmpty {
-            target = target.appendingPathExtension("md")
-        }
-        return write(to: target)
+        return write(to: accessory.resolvedURL(from: url))
     }
 
     private func write(to url: URL) -> Bool {
