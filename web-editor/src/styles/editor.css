@@ -247,3 +247,144 @@ body.is-resizing {
   cursor: col-resize;
   user-select: none;
 }
+
+/* —— TipTap 下划线 / 高亮 —— */
+.prose .ProseMirror u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose .ProseMirror mark {
+  border-radius: 3px;
+  padding: 0.05em 0.15em;
+  color: inherit;
+}
+
+/* —— 选区右键格式菜单 —— */
+.equi-ctx-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 88%, white 12%);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.3;
+  user-select: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .equi-ctx-menu {
+    background: color-mix(in srgb, var(--bg) 82%, #3a3c40 18%);
+    box-shadow:
+      0 16px 48px rgba(0, 0, 0, 0.45),
+      0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+}
+
+.equi-ctx-menu[hidden] {
+  display: none !important;
+}
+
+.equi-ctx-section {
+  padding: 6px 10px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.equi-ctx-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.equi-ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.equi-ctx-item:hover,
+.equi-ctx-item:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: none;
+}
+
+.equi-ctx-item.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.equi-ctx-item.is-active .equi-ctx-label::before {
+  content: "✓ ";
+  font-weight: 700;
+}
+
+.equi-ctx-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.equi-ctx-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px 8px;
+}
+
+.equi-ctx-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--text) 20%);
+  background: var(--swatch, var(--text));
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.equi-ctx-swatch[data-default="1"] {
+  background:
+    linear-gradient(135deg, transparent 46%, #c0392b 46%, #c0392b 54%, transparent 54%),
+    var(--bg-elevated);
+}
+
+.equi-ctx-swatch-bg[data-default="1"] {
+  background:
+    linear-gradient(135deg, transparent 46%, #c0392b 46%, #c0392b 54%, transparent 54%),
+    var(--bg);
+}
+
+.equi-ctx-swatch:hover,
+.equi-ctx-swatch:focus-visible {
+  outline: none;
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.equi-ctx-swatch.is-active {
+  box-shadow: 0 0 0 2px var(--accent);
+}

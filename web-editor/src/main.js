@@ -7,6 +7,7 @@ import { createSourceEditor } from './editors/source-editor.js';
 import { createWysiwygEditor } from './editors/wysiwyg-editor.js';
 import { createSyncEngine } from './sync/sync-engine.js';
 import { installSplitter } from './ui/splitter.js';
+import { installFormatContextMenu } from './ui/format-context-menu.js';
 import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
 
 function boot() {
@@ -57,6 +58,13 @@ function boot() {
     leftPane,
     container: appEl,
   });
+
+  const formatMenu = installFormatContextMenu({
+    getWysiwyg: () => wysiwyg.editor,
+    getSourceView: () => source.view,
+  });
+  formatMenu.attachWysiwyg(wysiwygHost);
+  formatMenu.attachSource(sourceHost);
 
   window.EditorAPI = {
     setMarkdown(payload) {

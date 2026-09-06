@@ -7,6 +7,10 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlock from '@tiptap/extension-code-block';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import Underline from '@tiptap/extension-underline';
+import Highlight from '@tiptap/extension-highlight';
 
 export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScroll }) {
   let suppressChange = false;
@@ -19,6 +23,10 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
         heading: { levels: [1, 2, 3, 4] },
       }),
       CodeBlock,
+      TextStyle,
+      Color,
+      Underline,
+      Highlight.configure({ multicolor: true }),
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { rel: 'noopener', target: null },

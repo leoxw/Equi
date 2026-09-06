@@ -26,6 +26,40 @@ const turndown = new TurndownService({
 });
 turndown.use(gfm);
 
+// 保留富文本色/下划线/高亮（标准 Markdown 无对应语法，落盘为内联 HTML）
+turndown.addRule('equiColoredSpan', {
+  filter(node) {
+    return (
+      node.nodeName === 'SPAN' &&
+      node.style &&
+      typeof node.style.color === 'string' &&
+      node.style.color.length > 0
+    );
+  },
+  replacement(content, node) {
+    const color = node.style.color;
+    return `<span style="color: ${color}">${content}</span>`;
+  },
+});
+
+turndown.addRule('equiUnderline', {
+  filter: ['u'],
+  replacement(content) {
+    return `<u>${content}</u>`;
+  },
+});
+
+turndown.addRule('equiHighlight', {
+  filter(node) {
+    return node.nodeName === 'MARK';
+  },
+  replacement(content, node) {
+    const bg = node.style?.backgroundColor;
+    if (bg) return `<mark style="background-color: ${bg}">${content}</mark>`;
+    return `<mark>${content}</mark>`;
+  },
+});
+
 /** Markdown 字符串 → HTML（供 TipTap） */
 export function markdownToHtml(markdown) {
   const src = markdown ?? '';
