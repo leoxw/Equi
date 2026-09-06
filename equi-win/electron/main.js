@@ -14,6 +14,20 @@ const {
 const sessions = new Map();
 const isDev = process.argv.includes('--dev');
 
+function safeWcId(session) {
+  if (!session) return null;
+  if (session.wcId != null) return session.wcId;
+  try {
+    if (session.win && !session.win.isDestroyed()) return session.win.webContents.id;
+  } catch (_) { /* destroyed */ }
+  return null;
+}
+
+function broadcastSession(session) {
+  const id = safeWcId(session);
+  if (id != null) broadcastState(id);
+}
+
 /**
  * @typedef {{
  *   win: Electron.BrowserWindow,
@@ -46,12 +60,21 @@ function preloadEditorPath() {
 function broadcastState(wcId) {
   const s = sessions.get(wcId);
   if (!s || s.win.isDestroyed()) return;
-  s.win.webContents.send('doc:state', s.doc.snapshot());
-  s.win.setTitle(`${s.doc.windowTitle} — Equi`);
+  try {
+    s.win.webContents.send('doc:state', s.doc.snapshot());
+    s.win.setTitle(`${s.doc.windowTitle} — Equi`);
+  } catch (_) {
+    /* window may be mid-destroy */
+  }
 }
 
 function sessionFromEvent(event) {
-  return sessions.get(event.sender.id) || null;
+  try {
+    if (!event?.sender || event.sender.isDestroyed?.()) return null;
+    return sessions.get(event.sender.id) || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function createWindow(openPath) {
@@ -72,6 +95,9 @@ function createWindow(openPath) {
     },
   });
 
+  // Capture id before close — win.webContents is unusable in 'closed'
+  const wcId = win.webContents.id;
+
   /** @type {Session} */
   const session = {
     win,
@@ -80,11 +106,18 @@ function createWindow(openPath) {
     lastPushedMode: null,
     editorReady: false,
     guestId: null,
+    wcId,
   };
-  sessions.set(win.webContents.id, session);
+  sessions.set(wcId, session);
 
-  win.once('ready-to-show', () => win.show());
-  win.on('closed', () => sessions.delete(win.webContents.id));
+  win.once('ready-to-show', () => {
+    try {
+      if (!win.isDestroyed()) win.show();
+    } catch (_) { /* ignore */ }
+  });
+  win.on('closed', () => {
+    sessions.delete(wcId);
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -99,11 +132,12 @@ function createWindow(openPath) {
   });
 
   win.webContents.on('did-finish-load', () => {
-    broadcastState(win.webContents.id);
+    if (win.isDestroyed()) return;
+    broadcastState(wcId);
     if (openPath) {
       try {
         session.doc.loadFromPath(openPath);
-        broadcastState(win.webContents.id);
+        broadcastState(wcId);
         pushToEditor(session);
       } catch (err) {
         dialog.showErrorBox('无法打开文件', String(err.message || err));
@@ -115,27 +149,42 @@ function createWindow(openPath) {
 }
 
 function evalInEditor(session, js) {
-  if (session.win.isDestroyed()) return Promise.resolve(null);
+  if (!session || session.win.isDestroyed()) return Promise.resolve(null);
   // Prefer direct guest webContents (more reliable on Windows than shell relay)
   if (session.guestId) {
     try {
       const guest = webContents.fromId(session.guestId);
       if (guest && !guest.isDestroyed()) {
         return guest.executeJavaScript(js, true).catch((err) => {
-          console.error('[equi] guest eval failed', err);
+          if (!/destroy/i.test(String(err?.message || err))) {
+            console.error('[equi] guest eval failed', err);
+          }
           return null;
         });
       }
     } catch (err) {
-      console.error('[equi] guest webContents error', err);
+      if (!/destroy/i.test(String(err?.message || err))) {
+        console.error('[equi] guest webContents error', err);
+      }
     }
   }
-  return session.win.webContents.executeJavaScript(
-    `window.__equiEvalEditor && window.__equiEvalEditor(${JSON.stringify(js)})`
-  ).catch((err) => {
-    console.error('[equi] shell eval relay failed', err);
-    return null;
-  });
+  try {
+    if (session.win.isDestroyed() || session.win.webContents.isDestroyed()) {
+      return Promise.resolve(null);
+    }
+    return session.win.webContents
+      .executeJavaScript(
+        `window.__equiEvalEditor && window.__equiEvalEditor(${JSON.stringify(js)})`
+      )
+      .catch((err) => {
+        if (!/destroy/i.test(String(err?.message || err))) {
+          console.error('[equi] shell eval relay failed', err);
+        }
+        return null;
+      });
+  } catch (_) {
+    return Promise.resolve(null);
+  }
 }
 
 function pushEditingMode(session) {
@@ -166,6 +215,7 @@ function pushNativeContent(session) {
 }
 
 function pushToEditor(session) {
+  if (!session || session.win.isDestroyed()) return;
   pushEditingMode(session);
   pushNativeContent(session);
 }
@@ -182,7 +232,7 @@ function handleBridge(session, body) {
         session.doc.replaceContent(WELCOME_MARKDOWN, true);
       }
       pushToEditor(session);
-      broadcastState(session.win.webContents.id);
+      broadcastSession(session);
       break;
     }
     case 'contentChange':
@@ -194,13 +244,13 @@ function handleBridge(session, body) {
         wordCount: body.wordCount ?? 0,
         characterCount: body.characterCount ?? 0,
       });
-      broadcastState(session.win.webContents.id);
+      broadcastSession(session);
       break;
     }
     case 'dirty': {
       if (typeof body.dirty === 'boolean') {
         session.doc.isDirty = body.dirty;
-        broadcastState(session.win.webContents.id);
+        broadcastSession(session);
       }
       break;
     }
@@ -210,7 +260,7 @@ function handleBridge(session, body) {
     }
     case 'loadError': {
       session.doc.markEditorFailed(body.message || '编辑器启动失败');
-      broadcastState(session.win.webContents.id);
+      broadcastSession(session);
       break;
     }
     default:
@@ -256,7 +306,7 @@ async function openDocument(session) {
     session.lastPushedRevision = 0;
     session.lastPushedMode = null;
     pushToEditor(session);
-    broadcastState(session.win.webContents.id);
+    broadcastSession(session);
     return true;
   } catch (err) {
     dialog.showErrorBox('无法打开文件', String(err.message || err));
@@ -310,7 +360,7 @@ async function saveAsDocument(session) {
     session.doc.writeToPath(target);
     session.lastPushedMode = null;
     pushEditingMode(session);
-    broadcastState(session.win.webContents.id);
+    broadcastSession(session);
     evalInEditor(
       session,
       `window.EditorAPI && window.EditorAPI.markClean(${JSON.stringify(session.doc.content)})`
@@ -326,7 +376,7 @@ async function saveDocument(session) {
   if (session.doc.filePath) {
     try {
       session.doc.writeToPath(session.doc.filePath);
-      broadcastState(session.win.webContents.id);
+      broadcastSession(session);
       evalInEditor(
         session,
         `window.EditorAPI && window.EditorAPI.markClean(${JSON.stringify(session.doc.content)})`
@@ -341,8 +391,13 @@ async function saveDocument(session) {
 }
 
 function focusedSession() {
-  const win = BrowserWindow.getFocusedWindow();
-  return win ? sessions.get(win.webContents.id) || null : null;
+  try {
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win || win.isDestroyed()) return null;
+    return sessions.get(win.webContents.id) || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function buildMenu() {
@@ -539,6 +594,15 @@ if (!gotLock) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
+  });
+
+  
+  app.on('before-quit', () => {
+    for (const s of sessions.values()) {
+      s.editorReady = false;
+      s.guestId = null;
+    }
+    sessions.clear();
   });
 
   app.on('window-all-closed', () => {
