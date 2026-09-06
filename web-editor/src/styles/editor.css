@@ -118,16 +118,29 @@ body {
   bottom: 12%;
   left: 2px;
   width: 2px;
-  border-radius: 2px;
+  border-radius: 1px;
   background: var(--splitter);
-  transition: background 120ms ease, transform 120ms ease;
+  transition: background 120ms ease;
 }
 
 .splitter:hover::after,
-.splitter:focus-visible::after,
 .splitter.is-dragging::after {
   background: var(--splitter-active);
-  transform: scaleX(1.6);
+}
+
+/* 纯文本模式：隐藏 WYSIWYG 与分隔条，源码栏铺满 */
+body.mode-plain .pane-wysiwyg,
+body.mode-plain #pane-wysiwyg,
+body.mode-plain .splitter,
+body.mode-plain #splitter {
+  display: none !important;
+}
+
+body.mode-plain .pane-source,
+body.mode-plain #pane-source {
+  width: 100% !important;
+  flex: 1 1 auto !important;
+  min-width: 0;
 }
 
 /* —— CodeMirror —— */

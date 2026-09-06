@@ -80,7 +80,7 @@ function boot() {
       else source.redo();
     },
     focusPane(pane) {
-      if (pane === 'wysiwyg') {
+      if (pane === 'wysiwyg' && !document.body.classList.contains('mode-plain')) {
         sync.setFocus('wysiwyg');
         wysiwyg.focus();
       } else {
@@ -90,6 +90,32 @@ function boot() {
     },
     markClean() {
       sync.markClean();
+    },
+    /**
+     * 切换编辑模式。
+     * @param {{ mode: 'markdown' | 'plain' }} payload
+     */
+    setEditingMode(payload) {
+      const mode = typeof payload === 'string' ? payload : payload?.mode;
+      const plain = mode === 'plain';
+      document.body.classList.toggle('mode-plain', plain);
+      const label = document.querySelector('#pane-source .pane-label');
+      if (label) {
+        label.textContent = plain ? '纯文本' : 'Markdown';
+      }
+      if (plain) {
+        sync.setFocus('source');
+        source.focus();
+      }
+      // 触发布局刷新，避免 CodeMirror 宽度停留在旧值
+      requestAnimationFrame(() => {
+        try {
+          source.view.requestMeasure?.();
+        } catch (_) {
+          /* ignore */
+        }
+        window.dispatchEvent(new Event('resize'));
+      });
     },
   };
 

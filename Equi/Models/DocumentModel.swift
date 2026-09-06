@@ -3,7 +3,7 @@ import Combine
 import AppKit
 import UniformTypeIdentifiers
 
-/// 管理当前 Markdown 文档的内容、路径与脏状态。
+/// 管理当前文档的内容、路径、格式与脏状态。
 @MainActor
 final class DocumentModel: ObservableObject {
 
@@ -17,6 +17,8 @@ final class DocumentModel: ObservableObject {
     @Published var isEditorReady: Bool = false
     /// Web 编辑器加载失败时的可读原因；非 nil 时 UI 应撤掉转圈并展示错误。
     @Published var editorLoadError: String? = nil
+    /// Markdown 双栏 / 纯文本单栏。
+    @Published var kind: DocumentKind = .markdown
 
     /// 最近一次由原生侧主动下发到 Web 的内容版本号，用于去重。
     private(set) var nativeRevision: UInt64 = 0
@@ -35,7 +37,8 @@ final class DocumentModel: ObservableObject {
         if let fileURL {
             return fileURL.lastPathComponent
         }
-        return isDirty ? "未命名.md — 已编辑" : "未命名.md"
+        let ext = kind.pathExtension
+        return isDirty ? "未命名.\(ext) — 已编辑" : "未命名.\(ext)"
     }
 
     var windowTitle: String {
@@ -47,7 +50,6 @@ final class DocumentModel: ObservableObject {
 
     /// Web 编辑器通过 bridge 上报文档变更。
     func applyWebUpdate(markdown: String, dirty: Bool, words: Int, characters: Int) {
-        // 避免与原生下发形成回环：内容相同则只更新元数据。
         if content != markdown {
             content = markdown
         }
@@ -76,7 +78,6 @@ final class DocumentModel: ObservableObject {
             return
         }
         characterCount = content.count
-        // 粗略字数：按空白分词 + 中日文连续字符按字计。
         let latinWords = trimmed
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
@@ -93,17 +94,19 @@ final class DocumentModel: ObservableObject {
 
     func newDocument() {
         fileURL = nil
+        kind = .markdown
         replaceContent("", markingClean: true)
     }
 
     @discardableResult
     func openDocument() -> Bool {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.markdown, .plainText, .text]
+        panel.allowedContentTypes = [.markdown, .plainText, .text, .json, .xml, .sourceCode, .data]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.message = "选择要打开的 Markdown 文件"
+        panel.message = "选择要打开的文本文件（Markdown / 纯文本 / 其他文本格式）"
         panel.prompt = "打开"
+        // 允许 .swift / .toml 等未在 UTType 列表中的扩展名
         panel.allowsOtherFileTypes = true
 
         guard panel.runModal() == .OK, let url = panel.url else {
@@ -121,6 +124,7 @@ final class DocumentModel: ObservableObject {
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
             fileURL = url
+            kind = DocumentKind.infer(from: url)
             replaceContent(text, markingClean: true)
             return true
         } catch {
@@ -131,8 +135,9 @@ final class DocumentModel: ObservableObject {
 
     @discardableResult
     func save() -> Bool {
+        // 已有路径：按原格式原路径写入（纯文本保留 .json/.swift 等）
         if let fileURL {
-            return write(to: fileURL)
+            return write(to: fileURL, updatingKind: false)
         }
         return saveAs()
     }
@@ -145,27 +150,23 @@ final class DocumentModel: ObservableObject {
         panel.prompt = "存储"
         panel.isExtensionHidden = false
 
-        let initialFormat = SaveFormatAccessory.Format.inferred(from: fileURL)
+        let accessory = SaveFormatAccessory(documentKind: kind)
         let defaultName: String = {
-            if let fileURL {
-                let base = fileURL.deletingPathExtension().lastPathComponent
-                return "\(base).\(initialFormat.pathExtension)"
-            }
-            return "未命名.\(initialFormat.pathExtension)"
+            let base = fileURL?.deletingPathExtension().lastPathComponent ?? "未命名"
+            return "\(base).\(accessory.selectedChoice.pathExtension)"
         }()
         panel.nameFieldStringValue = defaultName
-
-        // 附件弹出菜单：Markdown (.md) / 纯文本 (.txt)；切换时同步扩展名
-        let accessory = SaveFormatAccessory(initial: initialFormat)
         accessory.attach(to: panel)
 
         guard panel.runModal() == .OK, let url = panel.url else {
             return false
         }
-        return write(to: accessory.resolvedURL(from: url))
+        let target = accessory.resolvedURL(from: url)
+        kind = accessory.selectedChoice.documentKind
+        return write(to: target, updatingKind: false)
     }
 
-    private func write(to url: URL) -> Bool {
+    private func write(to url: URL, updatingKind: Bool) -> Bool {
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
@@ -173,6 +174,9 @@ final class DocumentModel: ObservableObject {
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
             fileURL = url
+            if updatingKind {
+                kind = DocumentKind.infer(from: url)
+            }
             isDirty = false
             return true
         } catch {

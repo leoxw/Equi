@@ -91,6 +91,9 @@ struct ContentView: View {
                 Text("内存文档").foregroundStyle(.secondary)
             }
 
+            Text(document.kind.statusLabel)
+                .foregroundStyle(.secondary)
+
             Spacer()
 
             Text("\(document.wordCount) 词 · \(document.characterCount) 字符")
@@ -162,12 +165,14 @@ struct EditorToolbar: View {
             Button { commands.focusSource() } label: {
                 Label("源码", systemImage: "chevron.left.forwardslash.chevron.right")
             }
-            .help("聚焦左侧 Markdown 源码")
+            .help(document.kind.isMarkdown ? "聚焦左侧 Markdown 源码" : "聚焦纯文本编辑区")
 
-            Button { commands.focusWysiwyg() } label: {
-                Label("预览编辑", systemImage: "doc.richtext")
+            if document.kind.isMarkdown {
+                Button { commands.focusWysiwyg() } label: {
+                    Label("预览编辑", systemImage: "doc.richtext")
+                }
+                .help("聚焦右侧所见即所得")
             }
-            .help("聚焦右侧所见即所得")
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)

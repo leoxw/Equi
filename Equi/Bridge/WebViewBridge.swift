@@ -12,6 +12,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
 
     private var webView: WKWebView!
     private var lastPushedRevision: UInt64 = 0
+    private var lastPushedMode: String?
     private var editorDidLoad = false
     private var cancellables = Set<AnyCancellable>()
     private var lastTicket: UInt64 = 0
@@ -110,7 +111,16 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             self.commands = commands
             bindCommands()
         }
+        pushEditingModeIfNeeded()
         pushNativeContentIfNeeded()
+    }
+
+    private func pushEditingModeIfNeeded() {
+        guard editorDidLoad else { return }
+        let mode = document.kind.webMode
+        guard mode != lastPushedMode else { return }
+        lastPushedMode = mode
+        evaluateCall("window.EditorAPI && window.EditorAPI.setEditingMode", payload: ["mode": mode])
     }
 
     private func bindCommands() {
@@ -131,7 +141,13 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         case .undo: evaluate("window.EditorAPI && window.EditorAPI.undo()")
         case .redo: evaluate("window.EditorAPI && window.EditorAPI.redo()")
         case .focusSource: evaluate("window.EditorAPI && window.EditorAPI.focusPane('source')")
-        case .focusWysiwyg: evaluate("window.EditorAPI && window.EditorAPI.focusPane('wysiwyg')")
+        case .focusWysiwyg:
+            // 纯文本模式没有右侧栏
+            guard document.kind.isMarkdown else {
+                evaluate("window.EditorAPI && window.EditorAPI.focusPane('source')")
+                return
+            }
+            evaluate("window.EditorAPI && window.EditorAPI.focusPane('wysiwyg')")
         }
     }
 
@@ -322,6 +338,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 self.editorDidLoad = true
                 self.document.markEditorReady()
                 self.lastPushedRevision = 0
+                self.lastPushedMode = nil
                 if self.document.content.isEmpty {
                     let welcome = """
                     # Equi
@@ -333,6 +350,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                     """
                     self.document.replaceContent(welcome, markingClean: true)
                 }
+                self.pushEditingModeIfNeeded()
                 self.pushNativeContentIfNeeded()
 
             case "contentChange", "contentChanged":
