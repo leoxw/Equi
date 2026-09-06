@@ -109,8 +109,7 @@ body.outline-collapsed .pane-outline {
   flex: 0 0 auto;
   padding: 8px 14px 4px;
   font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--muted);
   user-select: none;
 }
@@ -122,10 +121,42 @@ body.outline-collapsed .pane-outline {
   justify-content: space-between;
   gap: 8px;
   padding-right: 8px;
+  min-height: 32px;
 }
 
 .pane-toolbar .pane-label {
   padding-right: 0;
+}
+
+.pane-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pane-toggle-btn {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  width: 26px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pane-toggle-btn:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.pane-toggle-btn[aria-pressed='true'] {
+  color: var(--accent);
 }
 
 .preview-zoom {
@@ -230,6 +261,70 @@ body.mode-plain .pane-source,
 body.mode-plain #pane-source {
   width: 100% !important;
   flex: 1 1 auto !important;
+  min-width: 0;
+}
+
+/* Markdown 模式：纯文本栏 / markdown渲染后 均可折叠 */
+body.source-collapsed .pane-source,
+body.source-collapsed #pane-source {
+  width: 36px !important;
+  min-width: 36px !important;
+  flex: 0 0 36px !important;
+}
+
+body.source-collapsed .pane-source .editor-host,
+body.source-collapsed #pane-source .editor-host,
+body.source-collapsed .pane-source .pane-label {
+  display: none !important;
+}
+
+body.source-collapsed .pane-source .pane-toolbar {
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 8px 0 0;
+  height: 100%;
+}
+
+body.preview-collapsed .pane-wysiwyg,
+body.preview-collapsed #pane-wysiwyg {
+  width: 36px !important;
+  min-width: 36px !important;
+  flex: 0 0 36px !important;
+}
+
+body.preview-collapsed .pane-wysiwyg .editor-host,
+body.preview-collapsed #pane-wysiwyg .editor-host,
+body.preview-collapsed .pane-wysiwyg .pane-label,
+body.preview-collapsed .pane-wysiwyg .preview-zoom {
+  display: none !important;
+}
+
+body.preview-collapsed .pane-wysiwyg .pane-toolbar {
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 8px 0 0;
+  height: 100%;
+}
+
+body.source-collapsed .splitter,
+body.source-collapsed #splitter,
+body.preview-collapsed .splitter,
+body.preview-collapsed #splitter {
+  display: none !important;
+}
+
+/* 一侧折叠时，另一侧铺满 */
+body.source-collapsed:not(.preview-collapsed) .pane-wysiwyg,
+body.source-collapsed:not(.preview-collapsed) #pane-wysiwyg {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0;
+}
+
+body.preview-collapsed:not(.source-collapsed) .pane-source,
+body.preview-collapsed:not(.source-collapsed) #pane-source {
+  flex: 1 1 auto !important;
+  width: auto !important;
   min-width: 0;
 }
 

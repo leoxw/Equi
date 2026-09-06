@@ -183,19 +183,29 @@ struct EditorToolbar: View {
                 }
                 .help("显示/隐藏目录")
 
+                Button { commands.toggleSourcePane() } label: {
+                    Label("纯文本", systemImage: "text.alignleft")
+                }
+                .help("显示/隐藏纯文本栏")
+
+                Button { commands.togglePreviewPane() } label: {
+                    Label("渲染", systemImage: "doc.richtext")
+                }
+                .help("显示/隐藏 markdown渲染后")
+
                 Divider().frame(height: 16)
             }
 
             Button { commands.focusSource() } label: {
-                Label("源码", systemImage: "chevron.left.forwardslash.chevron.right")
+                Label("纯文本", systemImage: "chevron.left.forwardslash.chevron.right")
             }
-            .help(document.kind.isMarkdown ? "聚焦左侧 Markdown 源码" : "聚焦纯文本编辑区")
+            .help(document.kind.isMarkdown ? "聚焦左侧纯文本" : "聚焦纯文本编辑区")
 
             if document.kind.isMarkdown {
                 Button { commands.focusWysiwyg() } label: {
-                    Label("预览编辑", systemImage: "doc.richtext")
+                    Label("markdown渲染后", systemImage: "eye")
                 }
-                .help("聚焦右侧所见即所得")
+                .help("聚焦右侧 markdown渲染后")
             }
         }
         .labelStyle(.iconOnly)

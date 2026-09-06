@@ -10,6 +10,7 @@ import { installSplitter } from './ui/splitter.js';
 import { installFormatContextMenu } from './ui/format-context-menu.js';
 import { installOutlineNav } from './ui/outline-nav.js';
 import { installPreviewZoom } from './ui/preview-zoom.js';
+import { createPaneVisibility } from './ui/pane-visibility.js';
 import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
 
 function boot() {
@@ -103,6 +104,9 @@ function boot() {
     resetBtn: document.getElementById('zoom-reset'),
   });
 
+  const panes = createPaneVisibility();
+  panes.bind();
+
   // TipTap 事务后刷新目录（覆盖程序化 setContent）
   wysiwyg.editor.on('update', () => outline?.refresh());
   wysiwyg.editor.on('selectionUpdate', () => {
@@ -144,9 +148,11 @@ function boot() {
     },
     focusPane(pane) {
       if (pane === 'wysiwyg' && !document.body.classList.contains('mode-plain')) {
+        panes.ensureVisible('wysiwyg');
         sync.setFocus('wysiwyg');
         wysiwyg.focus();
       } else {
+        panes.ensureVisible('source');
         sync.setFocus('source');
         source.focus();
       }
@@ -162,9 +168,15 @@ function boot() {
       const mode = typeof payload === 'string' ? payload : payload?.mode;
       const plain = mode === 'plain';
       document.body.classList.toggle('mode-plain', plain);
+      panes.resetForPlainMode(plain);
       const label = document.querySelector('#pane-source .pane-label');
       if (label) {
-        label.textContent = plain ? '纯文本' : 'Markdown';
+        // Markdown / 纯文本模式下左侧栏统一显示「纯文本」
+        label.textContent = '纯文本';
+      }
+      const previewLabel = document.querySelector('#pane-wysiwyg .pane-label');
+      if (previewLabel) {
+        previewLabel.textContent = 'markdown渲染后';
       }
       if (plain) {
         sync.setFocus('source');
@@ -215,6 +227,14 @@ function boot() {
         window.dispatchEvent(new Event('resize'));
       }
       return { collapsed: document.body.classList.contains('outline-collapsed') };
+    },
+    toggleSourcePane(payload) {
+      const force = typeof payload === 'boolean' ? payload : payload?.collapsed;
+      return panes.toggleSource(force);
+    },
+    togglePreviewPane(payload) {
+      const force = typeof payload === 'boolean' ? payload : payload?.collapsed;
+      return panes.togglePreview(force);
     },
   };
 

@@ -13,6 +13,8 @@ final class EditorCommandBus: ObservableObject {
         case zoomOut
         case zoomReset
         case toggleOutline
+        case toggleSourcePane
+        case togglePreviewPane
     }
 
     /// 递增序号，保证相同命令也能被 Combine 再次投递。
@@ -32,4 +34,6 @@ final class EditorCommandBus: ObservableObject {
     func zoomOut() { send(.zoomOut) }
     func zoomReset() { send(.zoomReset) }
     func toggleOutline() { send(.toggleOutline) }
+    func toggleSourcePane() { send(.toggleSourcePane) }
+    func togglePreviewPane() { send(.togglePreviewPane) }
 }

@@ -169,6 +169,10 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             evaluate("window.EditorAPI && window.EditorAPI.setPreviewZoom('reset')")
         case .toggleOutline:
             evaluate("window.EditorAPI && window.EditorAPI.toggleOutline()")
+        case .toggleSourcePane:
+            evaluate("window.EditorAPI && window.EditorAPI.toggleSourcePane()")
+        case .togglePreviewPane:
+            evaluate("window.EditorAPI && window.EditorAPI.togglePreviewPane()")
         }
     }
 

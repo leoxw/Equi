@@ -83,17 +83,23 @@ ${css}
     <div id="outline-nav" class="outline-nav-host"></div>
   </aside>
   <div class="pane pane-source" id="pane-source">
-    <div class="pane-label">Markdown</div>
+    <div class="pane-toolbar pane-toolbar-source">
+      <div class="pane-label">纯文本</div>
+      <button type="button" id="toggle-source-pane" class="pane-toggle-btn" title="隐藏纯文本" aria-label="隐藏或显示纯文本" aria-pressed="false">◂</button>
+    </div>
     <div id="source-editor" class="editor-host"></div>
   </div>
   <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="调整分栏" tabindex="0"></div>
   <div class="pane pane-wysiwyg" id="pane-wysiwyg">
     <div class="pane-toolbar">
-      <div class="pane-label">预览</div>
-      <div class="preview-zoom" role="group" aria-label="预览缩放">
-        <button type="button" id="zoom-out" class="zoom-btn" title="缩小预览" aria-label="缩小">−</button>
-        <button type="button" id="zoom-reset" class="zoom-label" title="重置为 100%">100%</button>
-        <button type="button" id="zoom-in" class="zoom-btn" title="放大预览" aria-label="放大">+</button>
+      <div class="pane-label">markdown渲染后</div>
+      <div class="pane-toolbar-actions">
+        <div class="preview-zoom" role="group" aria-label="预览缩放">
+          <button type="button" id="zoom-out" class="zoom-btn" title="缩小预览" aria-label="缩小">−</button>
+          <button type="button" id="zoom-reset" class="zoom-label" title="重置为 100%">100%</button>
+          <button type="button" id="zoom-in" class="zoom-btn" title="放大预览" aria-label="放大">+</button>
+        </div>
+        <button type="button" id="toggle-preview-pane" class="pane-toggle-btn" title="隐藏 markdown渲染后" aria-label="隐藏或显示 markdown渲染后" aria-pressed="false">▸</button>
       </div>
     </div>
     <div id="wysiwyg-editor" class="editor-host prose"></div>
