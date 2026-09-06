@@ -40,7 +40,8 @@ struct DocumentWorkspaceView: View {
                     consumePendingFileIfNeeded()
                 }
             }
-            .onChange(of: openRouter.epoch) { _ in
+            // 不用 onChange(of:perform:)：Xcode 26 / 新 SDK 已移除单参数形式
+            .onReceive(openRouter.$epoch) { _ in
                 consumePendingFileIfNeeded()
             }
             .onOpenURL { url in

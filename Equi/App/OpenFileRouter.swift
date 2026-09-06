@@ -3,7 +3,8 @@ import AppKit
 import Combine
 
 /// 接收 Finder「打开方式」/ 双击传入的文件 URL，再交给窗口里的 DocumentModel。
-@MainActor
+/// AppKit 回调均在主线程；此类不做 `@MainActor` 标注，避免 Xcode 26 / Swift 6 下
+/// Delegate 与 SwiftUI 初始化时的隔离域编译错误。
 final class OpenFileRouter: ObservableObject {
     static let shared = OpenFileRouter()
     static let requestNewWindow = Notification.Name("equi.requestNewWindow")
@@ -21,6 +22,7 @@ final class OpenFileRouter: ObservableObject {
     var hasPending: Bool { !pendingURLs.isEmpty }
 
     func enqueue(_ urls: [URL]) {
+        dispatchPrecondition(condition: .onQueue(.main))
         let now = Date()
         pruneRecent(now: now)
 
@@ -46,12 +48,14 @@ final class OpenFileRouter: ObservableObject {
     }
 
     func dequeue() -> URL? {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard !pendingURLs.isEmpty else { return nil }
         return pendingURLs.removeFirst()
     }
 
     /// 多窗口同时收到通知时，只允许一扇窗去 openWindow。
     func claimNewWindow() -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard hasPending, !newWindowClaimed else { return false }
         newWindowClaimed = true
         DispatchQueue.main.async { [weak self] in
@@ -77,43 +81,31 @@ final class OpenFileRouter: ObservableObject {
     }
 }
 
-/// 桥接 Finder / Launch Services。AppKit 回调在主线程。
+/// 桥接 Finder / Launch Services。AppKit 保证这些回调在主线程。
 final class EquiAppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
-        enqueueOnMain(urls)
+        OpenFileRouter.shared.enqueue(urls)
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        enqueueOnMain([URL(fileURLWithPath: filename)])
+        OpenFileRouter.shared.enqueue([URL(fileURLWithPath: filename)])
         return true
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        enqueueOnMain(filenames.map { URL(fileURLWithPath: $0) })
-        // 必须告知 AppKit 已处理，否则可能再走一遍默认逻辑
+        OpenFileRouter.shared.enqueue(filenames.map { URL(fileURLWithPath: $0) })
         sender.reply(toOpenOrPrint: .success)
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
         if !commandLineFileURLs().isEmpty { return false }
-        return MainActor.assumeIsolated { !OpenFileRouter.shared.hasPending }
+        return !OpenFileRouter.shared.hasPending
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let files = commandLineFileURLs()
         guard !files.isEmpty else { return }
-        enqueueOnMain(files)
-    }
-
-    private func enqueueOnMain(_ urls: [URL]) {
-        let work = {
-            OpenFileRouter.shared.enqueue(urls)
-        }
-        if Thread.isMainThread {
-            MainActor.assumeIsolated(work)
-        } else {
-            DispatchQueue.main.async(work)
-        }
+        OpenFileRouter.shared.enqueue(files)
     }
 
     private func commandLineFileURLs() -> [URL] {

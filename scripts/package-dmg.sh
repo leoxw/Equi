@@ -138,7 +138,11 @@ set -e
 
 if [[ "${XCODE_STATUS}" -ne 0 ]]; then
   echo ""
-  echo "xcodebuild 失败。末尾日志："
+  echo "xcodebuild 失败。Swift/编译错误（若有）："
+  # 优先抽出真正的 error: 行，避免只看到 “The following build commands failed”
+  grep -E 'error:|fatal error:' "${DIST_DIR}/xcodebuild.log" | head -n 40 || true
+  echo ""
+  echo "日志末尾："
   tail -n 40 "${DIST_DIR}/xcodebuild.log" || true
   echo ""
   echo "若仍是 CodeSign 错误，可尝试："
