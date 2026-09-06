@@ -21,41 +21,103 @@
 }
 * { box-sizing: border-box; }
 html, body {
-  margin: 0; height: 100%; overflow: hidden;
-  font-family: var(--font); color: var(--text); background: var(--bg); user-select: none;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+  user-select: none;
 }
-body { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; }
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
 .toolbar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 12px; background: var(--bar); border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
 }
 .group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .group.right { margin-left: auto; }
 .title {
-  flex: 1; text-align: center; font-weight: 600; font-size: 14px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  flex: 1;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .toolbar button {
-  appearance: none; border: 1px solid transparent; background: transparent;
-  color: var(--text); font: inherit; font-size: 12px; padding: 5px 9px;
-  border-radius: 6px; cursor: pointer;
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
 }
 .toolbar button:hover { background: rgba(10,122,92,.1); border-color: var(--border); }
 .toolbar button:disabled { opacity: .4; cursor: default; }
 .sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; }
 .banner {
-  padding: 8px 12px; font-size: 12px; color: var(--warn);
-  background: var(--danger-bg); border-bottom: 1px solid var(--border); white-space: pre-wrap;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--warn);
+  background: var(--danger-bg);
+  border-bottom: 1px solid var(--border);
+  white-space: pre-wrap;
 }
 .banner.loading { color: var(--muted); background: var(--bar); }
-.editor-host { position: relative; min-height: 0; background: var(--bg); }
-.editor { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
-.statusbar {
-  display: flex; align-items: center; gap: 16px; padding: 6px 12px;
-  font-size: 12px; color: var(--muted); background: var(--bar); border-top: 1px solid var(--border);
+.editor-host {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  background: var(--bg);
+  /* Electron <webview> 在 Windows 上需要明确尺寸容器 */
+  display: flex;
 }
-.statusbar .path { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Windows：webview 默认可能不占布局，必须 inline-flex + 明确宽高 */
+webview.editor,
+#editor {
+  display: inline-flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bar);
+  border-top: 1px solid var(--border);
+}
+.statusbar .path {
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .statusbar .spacer { flex: 1; }
 .statusbar .dirty { color: var(--warn); }
 .statusbar .ready { color: var(--accent); }

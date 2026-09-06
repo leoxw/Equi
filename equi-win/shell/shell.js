@@ -9,6 +9,7 @@ const kindLabel = document.getElementById('kind-label');
 const statsLabel = document.getElementById('stats-label');
 const readyLabel = document.getElementById('ready-label');
 const btnSave = document.getElementById('btn-save');
+const editorHost = document.querySelector('.editor-host');
 
 function q(name) {
   return new URLSearchParams(location.search).get(name);
@@ -17,9 +18,10 @@ function q(name) {
 function toFileUrl(p) {
   if (!p) return '';
   if (p.startsWith('file:')) return p;
-  const n = p.replace(/\\/g, '/');
-  if (/^[a-zA-Z]:\//.test(n)) return `file:///${n}`;
-  return `file://${n.startsWith('/') ? '' : '/'}${n}`;
+  const n = String(p).replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(n)) return `file:///${encodeURI(n).replace(/#/g, '%23')}`;
+  const path = n.startsWith('/') ? n : `/${n}`;
+  return `file://${encodeURI(path).replace(/#/g, '%23')}`;
 }
 
 function editorSrc() {
@@ -32,6 +34,18 @@ function preloadSrc() {
   const fromQuery = q('preload');
   if (fromQuery) return toFileUrl(fromQuery);
   return new URL('../electron/preload-editor.js', location.href).href;
+}
+
+/** Windows 上 webview 偶尔需要强制写入像素尺寸才会绘制。 */
+function syncWebviewSize() {
+  if (!webview || !editorHost) return;
+  const rect = editorHost.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  webview.style.width = `${w}px`;
+  webview.style.height = `${h}px`;
+  webview.style.flex = '1 1 auto';
+  webview.style.display = 'inline-flex';
 }
 
 function applyState(next) {
@@ -60,11 +74,20 @@ function applyState(next) {
     readyLabel.textContent = '';
   }
   if (btnSave) btnSave.disabled = !next.isDirty && !!next.filePath;
+  requestAnimationFrame(syncWebviewSize);
 }
 
-window.__equiEvalEditor = (js) => {
-  if (!webview) return Promise.resolve(null);
-  return webview.executeJavaScript(js, true);
+window.__equiEvalEditor = async (js) => {
+  if (!webview) return null;
+  try {
+    return await webview.executeJavaScript(js, true);
+  } catch (err) {
+    console.error('[equi-shell] eval editor failed', err);
+    banner.hidden = false;
+    banner.className = 'banner';
+    banner.textContent = `编辑器注入失败：${err?.message || err}`;
+    return null;
+  }
 };
 
 webview.addEventListener('ipc-message', (event) => {
@@ -77,16 +100,36 @@ webview.addEventListener('did-fail-load', (e) => {
   if (e.errorCode === -3) return;
   banner.hidden = false;
   banner.className = 'banner';
-  banner.textContent = `页面加载失败：${e.errorDescription || e.errorCode}`;
+  banner.textContent = `页面加载失败：${e.errorDescription || e.errorCode}\n${e.validatedURL || ''}`;
+});
+
+webview.addEventListener('did-finish-load', () => {
+  syncWebviewSize();
+  // 通知主进程 guest 已就绪，便于直接 executeJavaScript
+  try {
+    const id = webview.getWebContentsId?.();
+    if (id && window.equiShell.reportGuestId) {
+      window.equiShell.reportGuestId(id);
+    }
+  } catch (err) {
+    console.warn('[equi-shell] getWebContentsId failed', err);
+  }
 });
 
 webview.addEventListener('dom-ready', () => {
+  syncWebviewSize();
   try { webview.setAudioMuted(true); } catch (_) { /* ignore */ }
 });
 
-webview.setAttribute('preload', preloadSrc());
-webview.setAttribute('src', editorSrc());
-webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no, sandbox=no');
+window.addEventListener('resize', syncWebviewSize);
+
+// 先 preload 再 src（Electron webview 要求）
+const preload = preloadSrc();
+const src = editorSrc();
+webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no, sandbox=no, webSecurity=no');
+webview.setAttribute('preload', preload);
+webview.setAttribute('src', src);
+syncWebviewSize();
 
 document.getElementById('toolbar').addEventListener('click', async (ev) => {
   const btn = ev.target.closest('button[data-action]');
@@ -119,3 +162,5 @@ document.getElementById('toolbar').addEventListener('click', async (ev) => {
 
 window.equiShell.onState(applyState);
 window.equiShell.getState().then(applyState);
+setTimeout(syncWebviewSize, 50);
+setTimeout(syncWebviewSize, 300);

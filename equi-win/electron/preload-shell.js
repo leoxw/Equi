@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('equiShell', {
   newWindow: () => ipcRenderer.invoke('app:newWindow'),
   sendCommand: (command) => ipcRenderer.send('editor:command', command),
   forwardBridge: (payload) => ipcRenderer.send('editor:bridge', payload),
+  reportGuestId: (id) => ipcRenderer.send('editor:guestId', id),
   onState: (cb) => {
     const handler = (_e, state) => cb(state);
     ipcRenderer.on('doc:state', handler);

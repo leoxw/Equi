@@ -1,7 +1,8 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, webContents } = require('electron');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const fs = require('fs');
 const {
   DocumentModel,
@@ -78,6 +79,7 @@ function createWindow(openPath) {
     lastPushedRevision: 0,
     lastPushedMode: null,
     editorReady: false,
+    guestId: null,
   };
   sessions.set(win.webContents.id, session);
 
@@ -91,8 +93,8 @@ function createWindow(openPath) {
 
   win.loadFile(shellHtmlPath(), {
     query: {
-      editor: editorHtmlPath(),
-      preload: preloadEditorPath(),
+      editor: pathToFileURL(editorHtmlPath()).href,
+      preload: pathToFileURL(preloadEditorPath()).href,
     },
   });
 
@@ -114,9 +116,26 @@ function createWindow(openPath) {
 
 function evalInEditor(session, js) {
   if (session.win.isDestroyed()) return Promise.resolve(null);
+  // Prefer direct guest webContents (more reliable on Windows than shell relay)
+  if (session.guestId) {
+    try {
+      const guest = webContents.fromId(session.guestId);
+      if (guest && !guest.isDestroyed()) {
+        return guest.executeJavaScript(js, true).catch((err) => {
+          console.error('[equi] guest eval failed', err);
+          return null;
+        });
+      }
+    } catch (err) {
+      console.error('[equi] guest webContents error', err);
+    }
+  }
   return session.win.webContents.executeJavaScript(
     `window.__equiEvalEditor && window.__equiEvalEditor(${JSON.stringify(js)})`
-  );
+  ).catch((err) => {
+    console.error('[equi] shell eval relay failed', err);
+    return null;
+  });
 }
 
 function pushEditingMode(session) {
@@ -235,6 +254,7 @@ async function openDocument(session) {
   try {
     session.doc.loadFromPath(filePaths[0]);
     session.lastPushedRevision = 0;
+    session.lastPushedMode = null;
     pushToEditor(session);
     broadcastState(session.win.webContents.id);
     return true;
@@ -476,6 +496,13 @@ function registerIpc() {
   ipcMain.on('editor:command', (event, command) => {
     const s = sessionFromEvent(event);
     if (s) runCommand(s, command);
+  });
+  ipcMain.on('editor:guestId', (event, id) => {
+    const s = sessionFromEvent(event);
+    if (!s) return;
+    s.guestId = id;
+    // Guest became available — retry push if editor already ready
+    if (s.editorReady) pushToEditor(s);
   });
   ipcMain.on('editor:bridge', (event, payload) => {
     const s = sessionFromEvent(event);
