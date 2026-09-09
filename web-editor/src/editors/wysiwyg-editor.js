@@ -11,6 +11,10 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
 
 export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScroll }) {
   let suppressChange = false;
@@ -27,6 +31,13 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
       Color,
       Underline,
       Highlight.configure({ multicolor: true }),
+      Table.configure({
+        resizable: false,
+        HTMLAttributes: { class: 'equi-table' },
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { rel: 'noopener', target: null },

@@ -574,17 +574,32 @@ body.outline-collapsed .outline-nav-empty {
   max-width: 100%;
 }
 
-.prose .ProseMirror table {
+.prose .ProseMirror table,
+.prose .ProseMirror table.equi-table {
   border-collapse: collapse;
-  margin-bottom: 0.7em;
+  margin: 0.6em 0 0.9em;
   width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--prose-heading-border);
+  border-radius: 6px;
 }
 
 .prose .ProseMirror th,
 .prose .ProseMirror td {
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--prose-heading-border);
+  padding: 6px 10px;
+  border: 1px solid var(--prose-heading-border);
   text-align: left;
+  vertical-align: top;
+  min-width: 48px;
+}
+
+.prose .ProseMirror th {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--bg-elevated) 70%, var(--text) 6%);
+}
+
+.prose .ProseMirror tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--bg) 88%, var(--text) 4%);
 }
 
 .prose .ProseMirror p.is-editor-empty:first-child::before {

@@ -60,11 +60,91 @@ turndown.addRule('equiHighlight', {
   },
 });
 
+/**
+ * 将连续的制表符分隔行（TSV）转成 GFM 管道表格，便于 marked / TipTap 渲染。
+ * 跳过围栏代码块；不改写已有 `|` 管道表。
+ */
+export function convertTabSeparatedTables(markdown) {
+  const src = markdown ?? '';
+  if (!src.includes('\t')) return src;
+
+  const lines = src.split('\n');
+  const out = [];
+  let inFence = false;
+  let i = 0;
+
+  const escapeCell = (cell) =>
+    String(cell ?? '')
+      .replace(/\|/g, '\\|')
+      .replace(/\r/g, '');
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmedStart = line.trimStart();
+
+    if (/^```/.test(trimmedStart)) {
+      inFence = !inFence;
+      out.push(line);
+      i += 1;
+      continue;
+    }
+
+    if (inFence) {
+      out.push(line);
+      i += 1;
+      continue;
+    }
+
+    const canStartTable =
+      line.includes('\t') &&
+      !trimmedStart.startsWith('|') &&
+      trimmedStart.length > 0;
+
+    if (canStartTable) {
+      const block = [];
+      let j = i;
+      while (j < lines.length) {
+        const cur = lines[j];
+        const curTrim = cur.trimStart();
+        if (/^```/.test(curTrim)) break;
+        if (!cur.includes('\t') || curTrim.startsWith('|') || curTrim.length === 0) {
+          break;
+        }
+        block.push(cur);
+        j += 1;
+      }
+
+      const rows = block.map((row) => row.split('\t').map((c) => c.trim()));
+      const width = rows[0]?.length ?? 0;
+      const sameWidth =
+        width >= 2 &&
+        rows.length >= 2 &&
+        rows.every((r) => r.length === width);
+
+      if (sameWidth) {
+        out.push(`| ${rows[0].map(escapeCell).join(' | ')} |`);
+        out.push(`| ${rows[0].map(() => '---').join(' | ')} |`);
+        for (let r = 1; r < rows.length; r += 1) {
+          out.push(`| ${rows[r].map(escapeCell).join(' | ')} |`);
+        }
+        i = j;
+        continue;
+      }
+    }
+
+    out.push(line);
+    i += 1;
+  }
+
+  return out.join('\n');
+}
+
 /** Markdown 字符串 → HTML（供 TipTap） */
 export function markdownToHtml(markdown) {
   const src = markdown ?? '';
   if (!src.trim()) return '<p></p>';
-  return marked.parse(src);
+  const normalized = convertTabSeparatedTables(src);
+  return marked.parse(normalized);
 }
 
 /** TipTap/ProseMirror HTML → Markdown 字符串 */
