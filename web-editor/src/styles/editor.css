@@ -523,17 +523,81 @@ body.outline-collapsed .outline-nav-empty {
   border-radius: 3px;
   padding: 16px;
   overflow: auto;
-  margin: 0 0 16px;
+  margin: 0;
 }
 
 .prose .ProseMirror pre code {
-  display: inline-block;
+  display: block;
   background: none;
   padding: 0;
   border-radius: 0;
   font-size: 1em;
   color: inherit;
   tab-size: 4;
+  white-space: pre;
+}
+
+/* 带语言标签的代码块容器 */
+.prose .ProseMirror .equi-codeblock {
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--prose-code-bg);
+}
+
+.prose .ProseMirror .equi-codeblock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 82%, var(--text) 6%);
+  user-select: none;
+}
+
+.prose .ProseMirror .equi-codeblock-badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.prose .ProseMirror .equi-codeblock-lang {
+  appearance: none;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 3px 22px 3px 8px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 10px) 55%,
+    calc(100% - 6px) 55%;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.prose .ProseMirror .equi-codeblock-lang:hover,
+.prose .ProseMirror .equi-codeblock-lang:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  outline: none;
+}
+
+.prose .ProseMirror .equi-codeblock pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .prose .ProseMirror blockquote {

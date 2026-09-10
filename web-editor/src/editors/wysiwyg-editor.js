@@ -6,7 +6,6 @@ import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
-import CodeBlock from '@tiptap/extension-code-block';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
@@ -15,6 +14,7 @@ import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
+import { EquiCodeBlock } from './equi-code-block.js';
 
 export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScroll }) {
   let suppressChange = false;
@@ -23,10 +23,10 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
     element: parent,
     extensions: [
       StarterKit.configure({
-        codeBlock: false, // 使用独立 CodeBlock，避免重复
+        codeBlock: false, // 使用带语言标签的 EquiCodeBlock
         heading: { levels: [1, 2, 3, 4] },
       }),
-      CodeBlock,
+      EquiCodeBlock,
       TextStyle,
       Color,
       Underline,

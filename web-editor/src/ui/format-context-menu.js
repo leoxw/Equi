@@ -250,7 +250,7 @@ function buildMenuHTML() {
     ['italic', '斜体', '⌘I'],
     ['underline', '下划线', '⌘U'],
     ['strike', '删除线', ''],
-    ['code', '行内代码', ''],
+    ['codeBlock', '代码块', ''],
   ]
     .map(
       ([cmd, label, hint]) =>
@@ -321,8 +321,8 @@ function isCommandActive(editor, cmd, value) {
       return editor.isActive('underline');
     case 'strike':
       return editor.isActive('strike');
-    case 'code':
-      return editor.isActive('code');
+    case 'codeBlock':
+      return editor.isActive('codeBlock');
     case 'paragraph':
       return editor.isActive('paragraph');
     case 'heading':
@@ -354,8 +354,8 @@ function applyWysiwygCommand(editor, cmd, value) {
     case 'strike':
       chain.toggleStrike().run();
       break;
-    case 'code':
-      chain.toggleCode().run();
+    case 'codeBlock':
+      chain.toggleCodeBlock().run();
       break;
     case 'paragraph':
       chain.setParagraph().run();
@@ -395,8 +395,8 @@ function applySourceCommand(view, cmd, value) {
     case 'strike':
       wrapSourceSelection(view, (t) => `~~${t}~~`);
       break;
-    case 'code':
-      wrapSourceSelection(view, (t) => `\`${t}\``);
+    case 'codeBlock':
+      wrapSourceAsCodeFence(view);
       break;
     case 'heading': {
       const level = Number(value) || 1;
@@ -437,6 +437,23 @@ function wrapSourceSelection(view, wrapper) {
   view.dispatch({
     changes: { from, to, insert: next },
     selection: { anchor: from, head: from + next.length },
+  });
+  view.focus();
+}
+
+/** 将选区包成 Markdown 围栏代码块；无选区时插入空代码块并把光标放在中间。 */
+function wrapSourceAsCodeFence(view, language = '') {
+  if (!view) return;
+  const { from, to } = view.state.selection.main;
+  const selected = from === to ? '' : view.state.sliceDoc(from, to);
+  const body = selected.length ? selected.replace(/\n$/, '') : '';
+  const open = `\`\`\`${language}`;
+  const close = '```';
+  const insert = `${open}\n${body}\n${close}`;
+  const cursor = from + open.length + 1 + body.length;
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: cursor, head: cursor },
   });
   view.focus();
 }
