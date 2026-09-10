@@ -7,13 +7,13 @@
 
 const TEXT_COLORS = [
   { id: 'default', label: '默认', value: null },
-  { id: 'ink', label: '墨黑', value: '#1c1c1c' },
-  { id: 'mute', label: '灰色', value: '#6b6b6b' },
-  { id: 'red', label: '朱红', value: '#c0392b' },
-  { id: 'orange', label: '橙', value: '#d35400' },
-  { id: 'green', label: '松绿', value: '#0a7a5c' },
-  { id: 'blue', label: '靛蓝', value: '#1a5fb4' },
-  { id: 'gold', label: '琥珀', value: '#b08900' },
+  { id: 'black', label: '黑色', value: 'black' },
+  { id: 'gray', label: '灰色', value: 'gray' },
+  { id: 'red', label: '红色', value: 'red' },
+  { id: 'orange', label: '橙色', value: 'orange' },
+  { id: 'green', label: '绿色', value: 'green' },
+  { id: 'blue', label: '蓝色', value: 'blue' },
+  { id: 'purple', label: '紫色', value: 'purple' },
 ];
 
 const HIGHLIGHTS = [
