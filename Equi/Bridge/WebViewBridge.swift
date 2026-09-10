@@ -52,7 +52,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         userContent.addUserScript(
             WKUserScript(
                 source: """
-                window.__EQUI_EDITOR__ = { platform: 'macos', app: 'Equi', bridgeReady: true };
+                window.__EQUI_EDITOR__ = { platform: 'macos', app: 'MarkDuo', bridgeReady: true };
                 window.onerror = function(msg, src, line) {
                   try {
                     window.webkit.messageHandlers.editorBridge.postMessage({
@@ -371,7 +371,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                     && !OpenFileRouter.shared.hasPending
                 if shouldWelcome {
                     let welcome = """
-                    # Equi
+                    # MarkDuo
 
                     左侧编辑 **原始 Markdown**，右侧进行所见即所得排版。
 

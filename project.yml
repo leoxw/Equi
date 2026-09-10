@@ -15,7 +15,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     # 本地无付费证书时 Hardened Runtime 易导致 CodeSign 失败；正式分发可再打开
     ENABLE_HARDENED_RUNTIME: NO
-    PRODUCT_NAME: Equi
+    PRODUCT_NAME: MarkDuo
 
 targets:
   Equi:
@@ -76,7 +76,7 @@ targets:
           fi
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.leoxw.Equi
+        PRODUCT_BUNDLE_IDENTIFIER: com.leoxw.MarkDuo
         INFOPLIST_FILE: Equi/Supporting/Info.plist
         CODE_SIGN_ENTITLEMENTS: Equi/Supporting/Equi.entitlements
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"

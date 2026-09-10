@@ -1,12 +1,12 @@
-# Equi
+# MarkDuo
 
-macOS 独占的原生双栏 Markdown 编辑器：SwiftUI + AppKit 外壳，WKWebView 内嵌离线 Web 编辑内核（CodeMirror 6 + TipTap）。
+macOS 原生双栏 Markdown 编辑器：SwiftUI + AppKit 外壳，WKWebView 内嵌离线 Web 编辑内核（CodeMirror 6 + TipTap）。
 
 ## 功能概览
 
 - 毛玻璃 / 透明标题栏（`titlebarAppearsTransparent` + `fullSizeContentView`）
 - 标准红绿灯位置与 ⌘O / ⌘S / ⌘⇧S / ⌘Z 等系统快捷键
-- 左栏 Raw Markdown（CodeMirror 6）↔ 右栏 WYSIWYG（TipTap / ProseMirror）
+- 左栏纯文本（CodeMirror 6）↔ 右栏 markdown渲染后（TipTap / ProseMirror）
 - 分栏拖拽、焦点驱动的双向同步锁、防抖、滚动百分比同步
 - 资源完全离线打包，无外网依赖
 
@@ -26,15 +26,15 @@ chmod +x scripts/*.sh
 
 | 路径 | 说明 |
 |------|------|
-| `dist/Equi-<version>.dmg` | 拖拽安装盘（含 Applications 快捷方式） |
-| `dist/Equi.app` | 可直接双击运行 |
+| `dist/MarkDuo-<version>.dmg` | 拖拽安装盘（含 Applications 快捷方式） |
+| `dist/MarkDuo.app` | 可直接双击运行 |
 
 ```bash
 ./scripts/package-dmg.sh --skip-editor          # 跳过前端重建
 CONFIGURATION=Debug ./scripts/package-dmg.sh   # Debug 包
 ```
 
-也可在 GitHub Actions 中手动触发工作流 **Package Equi DMG**，或推送 `v*` tag 自动出包。
+也可在 GitHub Actions 中手动触发工作流 **Package MarkDuo DMG**，或推送 `v*` tag 自动出包。
 
 > Linux / Cloud Agent 没有 `xcodebuild` / `hdiutil`，无法在此环境生成可运行的 macOS DMG。
 

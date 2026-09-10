@@ -238,7 +238,7 @@ function boot() {
     },
   };
 
-  const welcome = `# Equi
+  const welcome = `# MarkDuo
 
 左侧编辑 **原始 Markdown**，右侧预览排版对齐 Cursor 打开 Markdown 的阅读样式。
 

@@ -71,13 +71,13 @@ export default defineConfig({
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; worker-src blob: 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'" />
-<title>Equi</title>
+<title>MarkDuo</title>
 <style>
 ${css}
 </style>
 </head>
 <body>
-<div data-equi-probe="1" style="position:fixed;z-index:99999;right:8px;bottom:8px;padding:4px 8px;border-radius:6px;font:11px -apple-system;background:#0a7a5c;color:#fff;opacity:.85;pointer-events:none">Equi WebView OK</div>
+<div data-equi-probe="1" style="position:fixed;z-index:99999;right:8px;bottom:8px;padding:4px 8px;border-radius:6px;font:11px -apple-system;background:#0a7a5c;color:#fff;opacity:.85;pointer-events:none">MarkDuo WebView OK</div>
 <div id="app" class="app">
   <aside class="pane pane-outline" id="pane-outline" aria-label="目录导航">
     <div id="outline-nav" class="outline-nav-host"></div>

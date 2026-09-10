@@ -1,4 +1,4 @@
-name: Package Equi DMG
+name: Package MarkDuo DMG
 
 on:
   workflow_dispatch:
@@ -34,10 +34,10 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Equi-dmg
+          name: MarkDuo-dmg
           path: |
             dist/*.dmg
-            dist/Equi.app
+            dist/MarkDuo.app
           if-no-files-found: error
 
       - name: Attach DMG to GitHub Release

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 在 macOS 本机一键：构建 Equi.app → 打包 Equi-<version>.dmg
+# 在 macOS 本机一键：构建 MarkDuo.app → 打包 MarkDuo-<version>.dmg
 # 用法：
 #   ./scripts/package-dmg.sh
 #   ./scripts/package-dmg.sh --skip-editor
@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-APP_NAME="Equi"
+APP_NAME="MarkDuo"
 SCHEME="Equi"
 PROJECT_FILE="Equi.xcodeproj"
 SPEC_FILE="project.yml"
@@ -37,7 +37,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   brew install xcodegen
   ./scripts/package-dmg.sh
 
-或在 GitHub → Actions →「Package Equi DMG」手动运行。
+或在 GitHub → Actions →「Package MarkDuo DMG」手动运行。
 EOF
   exit 1
 fi
@@ -186,7 +186,7 @@ OUT_DMG="${DIST_DIR}/${DMG_NAME}"
 TMP_DMG="${DIST_DIR}/.${APP_NAME}-tmp.dmg"
 rm -f "${OUT_DMG}" "${TMP_DMG}"
 
-VOL_NAME="Equi ${VERSION}"
+VOL_NAME="MarkDuo ${VERSION}"
 SIZE_MB="$(du -sm "${STAGE}" | awk '{ print int($1) + 20 }')"
 
 echo "==> 创建可读写 DMG（${SIZE_MB}MB）"
@@ -246,10 +246,10 @@ ls -lh "${OUT_DMG}" "${DIST_DIR}/${APP_NAME}.app"
 
 cat <<EOF
 
-✓ Equi 打包完成
+✓ MarkDuo 打包完成
   DMG : ${OUT_DMG}
   App : ${DIST_DIR}/${APP_NAME}.app
   版本: ${VERSION} (${BUILD_NUMBER})
 
-安装：打开 DMG，将 Equi.app 拖到 Applications。
+安装：打开 DMG，将 MarkDuo.app 拖到 Applications。
 EOF
