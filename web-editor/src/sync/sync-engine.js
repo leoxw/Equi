@@ -10,7 +10,12 @@
  * 滚动百分比视口同步；活跃侧光标/选区由各编辑器自行保护（静默 set 不抢焦点）。
  */
 
-import { markdownToHtml, htmlToMarkdown, countStats } from './markdown-io.js';
+import {
+  markdownToHtml,
+  htmlToMarkdown,
+  countStats,
+  preserveTabSeparatedTables,
+} from './markdown-io.js';
 import { notifyContentChange } from '../bridge.js';
 
 const DEBOUNCE_MS = 120;
@@ -86,7 +91,8 @@ export function createSyncEngine({ source, wysiwyg }) {
 
     const run = () => {
       const html = typeof getHtml === 'function' ? getHtml() : getHtml;
-      const md = htmlToMarkdown(html);
+      // turndown 会把表格写成 GFM 管道表；若源码本是制表符表，回写时还原，避免渲染污染纯文本
+      const md = preserveTabSeparatedTables(lastMarkdown, htmlToMarkdown(html));
       if (fingerprint(md) === fingerprint(lastMarkdown) && !immediate) {
         emitToSwift(md);
         return;

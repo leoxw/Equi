@@ -139,6 +139,219 @@ export function convertTabSeparatedTables(markdown) {
   return out.join('\n');
 }
 
+/**
+ * 从 Markdown 中提取制表符分隔表（与 convertTabSeparatedTables 判定一致）。
+ * @returns {{ start: number, end: number, rawLines: string[], cells: string[][] }[]}
+ */
+function extractTabSeparatedTables(markdown) {
+  const src = markdown ?? '';
+  const lines = src.split('\n');
+  const tables = [];
+  let inFence = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmedStart = line.trimStart();
+
+    if (/^```/.test(trimmedStart)) {
+      inFence = !inFence;
+      i += 1;
+      continue;
+    }
+    if (inFence) {
+      i += 1;
+      continue;
+    }
+
+    const canStartTable =
+      line.includes('\t') &&
+      !trimmedStart.startsWith('|') &&
+      trimmedStart.length > 0;
+
+    if (canStartTable) {
+      const block = [];
+      let j = i;
+      while (j < lines.length) {
+        const cur = lines[j];
+        const curTrim = cur.trimStart();
+        if (/^```/.test(curTrim)) break;
+        if (!cur.includes('\t') || curTrim.startsWith('|') || curTrim.length === 0) {
+          break;
+        }
+        block.push(cur);
+        j += 1;
+      }
+
+      const cells = block.map((row) => row.split('\t').map((c) => c.trim()));
+      const width = cells[0]?.length ?? 0;
+      const sameWidth =
+        width >= 2 &&
+        cells.length >= 2 &&
+        cells.every((r) => r.length === width);
+
+      if (sameWidth) {
+        tables.push({ start: i, end: j, rawLines: block, cells });
+        i = j;
+        continue;
+      }
+    }
+
+    i += 1;
+  }
+
+  return tables;
+}
+
+const GFM_SEP_RE = /^\|?[\t ]*:?-+:?[\t ]*(\|[\t ]*:?-+:?[\t ]*)+\|?[\t ]*$/;
+
+function parseGfmRow(line) {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map((c) => c.trim().replace(/\\\|/g, '|'));
+}
+
+/**
+ * 从 Markdown 中提取 GFM 管道表（含分隔行）。
+ * @returns {{ start: number, end: number, cells: string[][] }[]}
+ */
+function extractGfmPipeTables(markdown) {
+  const lines = (markdown ?? '').split('\n');
+  const tables = [];
+  let inFence = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      inFence = !inFence;
+      i += 1;
+      continue;
+    }
+    if (inFence) {
+      i += 1;
+      continue;
+    }
+
+    if (
+      trimmed.startsWith('|') &&
+      i + 1 < lines.length &&
+      GFM_SEP_RE.test(lines[i + 1].trim())
+    ) {
+      const header = parseGfmRow(lines[i]);
+      if (header.length < 2) {
+        i += 1;
+        continue;
+      }
+      const cells = [header];
+      let j = i + 2;
+      while (j < lines.length) {
+        const t = lines[j].trim();
+        if (!t.startsWith('|') || GFM_SEP_RE.test(t)) break;
+        const row = parseGfmRow(lines[j]);
+        if (row.length !== header.length) break;
+        cells.push(row);
+        j += 1;
+      }
+      if (cells.length >= 2) {
+        tables.push({ start: i, end: j, cells });
+      }
+      i = j;
+      continue;
+    }
+
+    i += 1;
+  }
+
+  return tables;
+}
+
+function cellsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let r = 0; r < a.length; r += 1) {
+    if (a[r].length !== b[r].length) return false;
+    for (let c = 0; c < a[r].length; c += 1) {
+      if (a[r][c] !== b[r][c]) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 用制表符重建表格行：未改动的格子尽量保留原 raw 片段，改动过的格子用新内容。
+ */
+function rebuildTabTable(rawLines, prevCells, nextCells) {
+  if (cellsEqual(prevCells, nextCells)) {
+    return rawLines;
+  }
+  return nextCells.map((row, r) =>
+    row
+      .map((cell, c) => {
+        const prev = prevCells[r]?.[c];
+        if (prev === cell && rawLines[r] != null) {
+          const parts = rawLines[r].split('\t');
+          if (parts.length === row.length) return parts[c];
+        }
+        return cell;
+      })
+      .join('\t'),
+  );
+}
+
+/**
+ * WYSIWYG→源码回写时：若上一版源码是制表符表，而 turndown 写成了 GFM 管道表，
+ * 则按形状匹配并还原为制表符分隔，避免渲染过程污染纯文本源文件。
+ */
+export function preserveTabSeparatedTables(previousMarkdown, nextMarkdown) {
+  const prev = previousMarkdown ?? '';
+  const next = nextMarkdown ?? '';
+  if (!prev.includes('\t')) return next;
+
+  const tabTables = extractTabSeparatedTables(prev);
+  if (tabTables.length === 0) return next;
+
+  const gfmTables = extractGfmPipeTables(next);
+  if (gfmTables.length === 0) return next;
+
+  const usedPrev = new Set();
+  const replacements = [];
+
+  for (const gfm of gfmTables) {
+    const rows = gfm.cells.length;
+    const cols = gfm.cells[0]?.length ?? 0;
+    let matchIdx = -1;
+    for (let p = 0; p < tabTables.length; p += 1) {
+      if (usedPrev.has(p)) continue;
+      const tab = tabTables[p];
+      if (tab.cells.length === rows && tab.cells[0].length === cols) {
+        matchIdx = p;
+        break;
+      }
+    }
+    if (matchIdx < 0) continue;
+    usedPrev.add(matchIdx);
+    const tab = tabTables[matchIdx];
+    replacements.push({
+      start: gfm.start,
+      end: gfm.end,
+      lines: rebuildTabTable(tab.rawLines, tab.cells, gfm.cells),
+    });
+  }
+
+  if (replacements.length === 0) return next;
+
+  const nextLines = next.split('\n');
+  // 从后往前替换，避免行号偏移
+  replacements.sort((a, b) => b.start - a.start);
+  for (const rep of replacements) {
+    nextLines.splice(rep.start, rep.end - rep.start, ...rep.lines);
+  }
+  return nextLines.join('\n');
+}
+
 /** Markdown 字符串 → HTML（供 TipTap） */
 export function markdownToHtml(markdown) {
   const src = markdown ?? '';
