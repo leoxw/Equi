@@ -11,7 +11,7 @@ import { installFormatContextMenu } from './ui/format-context-menu.js';
 import { installOutlineNav } from './ui/outline-nav.js';
 import { installPreviewZoom } from './ui/preview-zoom.js';
 import { createPaneVisibility } from './ui/pane-visibility.js';
-import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
+import { notifyReady, logToSwift, notifyLoadError, hasNativeBridge } from './bridge.js';
 
 function boot() {
   const sourceHost = document.getElementById('source-editor');
@@ -256,10 +256,10 @@ function boot() {
 console.log('离线 Bundle，无外网依赖');
 \`\`\`
 
-> 通过 Cmd+O / Cmd+S 由 macOS 原生层管理文件。
+> 通过 Cmd/Ctrl+O / Cmd/Ctrl+S 由原生层管理文件。
 `;
 
-  if (!window.webkit?.messageHandlers?.editorBridge) {
+  if (!hasNativeBridge()) {
     sync.setMarkdownFromNative({ markdown: welcome, revision: 0, markClean: true });
   }
 

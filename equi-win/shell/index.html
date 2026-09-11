@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' file:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'none';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MarkDuo</title>
+  <link rel="stylesheet" href="./shell.css" />
+</head>
+<body>
+  <header id="toolbar" class="toolbar">
+    <div class="group">
+      <button type="button" data-action="new" title="新建窗口 (Ctrl+N)">新建</button>
+      <button type="button" data-action="open" title="打开 (Ctrl+O)">打开</button>
+      <button type="button" data-action="save" id="btn-save" title="存储 (Ctrl+S)">存储</button>
+      <span class="sep"></span>
+      <button type="button" data-action="undo" title="撤销 (Ctrl+Z)">撤销</button>
+      <button type="button" data-action="redo" title="重做 (Ctrl+Shift+Z)">重做</button>
+    </div>
+    <div id="doc-title" class="title">未命名</div>
+    <div class="group right">
+      <span class="md-only">
+        <button type="button" data-action="zoomOut" title="缩小预览">−</button>
+        <button type="button" data-action="zoomReset" title="重置预览缩放">100%</button>
+        <button type="button" data-action="zoomIn" title="放大预览">+</button>
+        <button type="button" data-action="toggleOutline" title="显示/隐藏目录">目录</button>
+        <button type="button" data-action="toggleSourcePane" title="显示/隐藏纯文本">纯文本</button>
+        <button type="button" data-action="togglePreviewPane" title="显示/隐藏 markdown渲染后">渲染</button>
+        <span class="sep"></span>
+      </span>
+      <button type="button" data-action="focusSource" title="聚焦纯文本">纯文本</button>
+      <button type="button" data-action="focusWysiwyg" class="md-only" title="聚焦 markdown渲染后">markdown渲染后</button>
+    </div>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+  <main class="editor-host">
+    <webview id="editor" class="editor" partition="persist:equi-editor" allowpopups="false"></webview>
+  </main>
+  <footer class="statusbar">
+    <span id="dirty-label">已保存</span>
+    <span id="path-label" class="path">内存文档</span>
+    <span id="kind-label">Markdown</span>
+    <span class="spacer"></span>
+    <span id="stats-label">0 词 · 0 字符</span>
+    <span id="ready-label" class="ready">加载中…</span>
+  </footer>
+  <script src="./shell.js"></script>
+</body>
+</html>
