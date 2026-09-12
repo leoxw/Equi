@@ -473,6 +473,8 @@ body.outline-collapsed .outline-nav-empty {
 .prose .ProseMirror p {
   margin-top: 0;
   margin-bottom: 16px;
+  /* 保留行首多级空格缩进的可见性（禁用 4 空格代码块后） */
+  white-space: pre-wrap;
 }
 
 .prose .ProseMirror h1,

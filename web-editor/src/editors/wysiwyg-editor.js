@@ -16,6 +16,7 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import { EquiCodeBlock } from './equi-code-block.js';
 import { BackspaceLiftIndent } from './backspace-lift-indent.js';
+import { TabSoftIndent } from './tab-soft-indent.js';
 
 export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScroll }) {
   let suppressChange = false;
@@ -29,6 +30,7 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
       }),
       EquiCodeBlock,
       BackspaceLiftIndent,
+      TabSoftIndent,
       TextStyle,
       Color,
       Underline,
