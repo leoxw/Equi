@@ -17,6 +17,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import { EquiCodeBlock } from './equi-code-block.js';
 import { BackspaceLiftIndent } from './backspace-lift-indent.js';
 import { TabSoftIndent } from './tab-soft-indent.js';
+import { IndentGuide } from './indent-guide.js';
 
 export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScroll }) {
   let suppressChange = false;
@@ -28,6 +29,7 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
         codeBlock: false, // 使用带语言标签的 EquiCodeBlock
         heading: { levels: [1, 2, 3, 4] },
       }),
+      IndentGuide,
       EquiCodeBlock,
       BackspaceLiftIndent,
       TabSoftIndent,

@@ -38,6 +38,22 @@ const turndown = new TurndownService({
 });
 turndown.use(gfm);
 
+// 缩进导引 → Markdown 双空格（每级 2 空格）
+turndown.addRule('equiIndentGuide', {
+  filter(node) {
+    return (
+      node.nodeName === 'SPAN' &&
+      (node.classList?.contains('equi-indent-guide') || node.hasAttribute?.('data-equi-indent'))
+    );
+  },
+  replacement(_content, node) {
+    const raw = node.getAttribute?.('data-equi-indent') || '0';
+    const level = parseInt(raw, 10);
+    const n = Number.isFinite(level) && level > 0 ? Math.min(level, 32) : 0;
+    return '  '.repeat(n);
+  },
+});
+
 // 回写 Markdown 时保留段落缩进与软换行。
 // 表格单元格内的 <p> 不能加空行，否则会破坏 GFM 管道表。
 turndown.addRule('paragraphKeepIndent', {
@@ -68,12 +84,19 @@ function normalizeEditorHtmlForMarkdown(html) {
     .replace(/<br[^>]*class="[^"]*ProseMirror-trailingBreak[^"]*"[^>]*>/gi, '');
 }
 
-/** 把一段前导空白写成 &nbsp;，避免 HTML/ProseMirror 折叠缩进 */
+/** 把一段前导空白写成缩进导引（每 2 空格 = 1 级 = 渲染 2em ≈ 两汉字宽） */
 function encodeLeadingSpaces(spaces) {
-  return String(spaces ?? '')
+  const normalized = String(spaces ?? '')
     .replace(/&#32;/gi, ' ')
-    .replace(/ /g, '&nbsp;')
-    .replace(/\t/g, '&nbsp;&nbsp;');
+    .replace(/\t/g, '  ');
+  const level = Math.floor(normalized.length / 2);
+  const rest = normalized.length % 2;
+  if (level <= 0) {
+    return rest ? '&nbsp;' : '';
+  }
+  // 放入零宽字符，避免 turndown 跳过空 span（否则回写会丢掉缩进）
+  const guide = `<span class="equi-indent-guide" data-equi-indent="${level}" style="--equi-indent-level: ${level}" contenteditable="false">\u200b</span>`;
+  return rest ? `${guide}&nbsp;` : guide;
 }
 
 /**
