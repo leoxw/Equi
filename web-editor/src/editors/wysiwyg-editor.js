@@ -19,6 +19,32 @@ import { BackspaceLiftIndent } from './backspace-lift-indent.js';
 import { TabSoftIndent } from './tab-soft-indent.js';
 import { IndentGuide } from './indent-guide.js';
 
+/** 保留大纲缩进层级的表格（data-equi-indent） */
+const EquiTable = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      equiIndent: {
+        default: null,
+        parseHTML: (element) => {
+          const raw = element.getAttribute('data-equi-indent');
+          if (raw == null || raw === '') return null;
+          const n = parseInt(raw, 10);
+          return Number.isFinite(n) && n > 0 ? Math.min(n, 32) : null;
+        },
+        renderHTML: (attributes) => {
+          const level = attributes.equiIndent;
+          if (level == null || level <= 0) return {};
+          return {
+            'data-equi-indent': String(level),
+            style: `--equi-indent-level:${level};margin-left:${level * 2}em`,
+          };
+        },
+      },
+    };
+  },
+});
+
 export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScroll }) {
   let suppressChange = false;
 
@@ -37,7 +63,7 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
       Color,
       Underline,
       Highlight.configure({ multicolor: true }),
-      Table.configure({
+      EquiTable.configure({
         resizable: false,
         HTMLAttributes: { class: 'equi-table' },
       }),
