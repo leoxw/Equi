@@ -602,6 +602,136 @@ body.outline-collapsed .outline-nav-empty {
   background: transparent;
 }
 
+/* highlight.js / lowlight token 颜色（浅色 + 深色，跟随 CSS 变量） */
+.prose .ProseMirror .equi-codeblock code.hljs,
+.prose .ProseMirror pre code.hljs {
+  color: var(--text);
+}
+
+.prose .ProseMirror .hljs-comment,
+.prose .ProseMirror .hljs-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.prose .ProseMirror .hljs-keyword,
+.prose .ProseMirror .hljs-selector-tag,
+.prose .ProseMirror .hljs-literal,
+.prose .ProseMirror .hljs-section,
+.prose .ProseMirror .hljs-link {
+  color: #0550ae;
+}
+
+.prose .ProseMirror .hljs-string,
+.prose .ProseMirror .hljs-doctag,
+.prose .ProseMirror .hljs-regexp,
+.prose .ProseMirror .hljs-addition,
+.prose .ProseMirror .hljs-attribute,
+.prose .ProseMirror .hljs-meta .hljs-string {
+  color: #0a7a5c;
+}
+
+.prose .ProseMirror .hljs-number,
+.prose .ProseMirror .hljs-bullet,
+.prose .ProseMirror .hljs-symbol {
+  color: #953800;
+}
+
+.prose .ProseMirror .hljs-title,
+.prose .ProseMirror .hljs-title.function_,
+.prose .ProseMirror .hljs-section {
+  color: #8250df;
+}
+
+.prose .ProseMirror .hljs-built_in,
+.prose .ProseMirror .hljs-type,
+.prose .ProseMirror .hljs-class .hljs-title,
+.prose .ProseMirror .hljs-title.class_ {
+  color: #bf3989;
+}
+
+.prose .ProseMirror .hljs-variable,
+.prose .ProseMirror .hljs-template-variable,
+.prose .ProseMirror .hljs-selector-id,
+.prose .ProseMirror .hljs-selector-class,
+.prose .ProseMirror .hljs-attr,
+.prose .ProseMirror .hljs-name,
+.prose .ProseMirror .hljs-tag {
+  color: #0550ae;
+}
+
+.prose .ProseMirror .hljs-meta,
+.prose .ProseMirror .hljs-meta .hljs-keyword,
+.prose .ProseMirror .hljs-subst {
+  color: #6e7781;
+}
+
+.prose .ProseMirror .hljs-deletion {
+  color: #cf222e;
+}
+
+.prose .ProseMirror .hljs-emphasis {
+  font-style: italic;
+}
+
+.prose .ProseMirror .hljs-strong {
+  font-weight: 700;
+}
+
+@media (prefers-color-scheme: dark) {
+  .prose .ProseMirror .hljs-keyword,
+  .prose .ProseMirror .hljs-selector-tag,
+  .prose .ProseMirror .hljs-literal,
+  .prose .ProseMirror .hljs-link,
+  .prose .ProseMirror .hljs-variable,
+  .prose .ProseMirror .hljs-template-variable,
+  .prose .ProseMirror .hljs-attr,
+  .prose .ProseMirror .hljs-name,
+  .prose .ProseMirror .hljs-tag {
+    color: #79c0ff;
+  }
+
+  .prose .ProseMirror .hljs-string,
+  .prose .ProseMirror .hljs-doctag,
+  .prose .ProseMirror .hljs-regexp,
+  .prose .ProseMirror .hljs-addition,
+  .prose .ProseMirror .hljs-attribute,
+  .prose .ProseMirror .hljs-meta .hljs-string {
+    color: #3dcf9a;
+  }
+
+  .prose .ProseMirror .hljs-number,
+  .prose .ProseMirror .hljs-bullet,
+  .prose .ProseMirror .hljs-symbol {
+    color: #ffa657;
+  }
+
+  .prose .ProseMirror .hljs-title,
+  .prose .ProseMirror .hljs-title.function_,
+  .prose .ProseMirror .hljs-section {
+    color: #d2a8ff;
+  }
+
+  .prose .ProseMirror .hljs-built_in,
+  .prose .ProseMirror .hljs-type,
+  .prose .ProseMirror .hljs-class .hljs-title,
+  .prose .ProseMirror .hljs-title.class_ {
+    color: #ff7b72;
+  }
+
+  .prose .ProseMirror .hljs-meta,
+  .prose .ProseMirror .hljs-meta .hljs-keyword,
+  .prose .ProseMirror .hljs-subst,
+  .prose .ProseMirror .hljs-comment,
+  .prose .ProseMirror .hljs-quote {
+    color: #8b949e;
+  }
+
+  .prose .ProseMirror .hljs-deletion {
+    color: #ffa198;
+  }
+}
+
 .prose .ProseMirror blockquote {
   margin: 0 0 16px;
   padding: 0 16px 0 10px;
