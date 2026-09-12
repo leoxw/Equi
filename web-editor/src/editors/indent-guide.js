@@ -44,7 +44,8 @@ export const IndentGuide = Node.create({
       mergeAttributes(HTMLAttributes, {
         class: 'equi-indent-guide',
         'data-equi-indent': String(level),
-        style: `--equi-indent-level: ${level}`,
+        // 显式 width：部分 WKWebView 对「仅 CSS 变量 × calc」宽度不稳定
+        style: `--equi-indent-level:${level};width:${level * 2}em;min-width:2em`,
         contenteditable: 'false',
       }),
       // 零宽字符：turndown 会跳过完全空的 span，回写 Markdown 会丢缩进

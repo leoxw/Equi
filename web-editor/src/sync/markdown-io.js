@@ -94,8 +94,9 @@ function encodeLeadingSpaces(spaces) {
   if (level <= 0) {
     return rest ? '&nbsp;' : '';
   }
-  // 放入零宽字符，避免 turndown 跳过空 span（否则回写会丢掉缩进）
-  const guide = `<span class="equi-indent-guide" data-equi-indent="${level}" style="--equi-indent-level: ${level}" contenteditable="false">\u200b</span>`;
+  // 显式写上 width，避免部分 WebView 对仅 CSS 变量的 calc 支持不稳
+  // 零宽字符：避免 turndown 跳过空 span（否则回写会丢掉缩进）
+  const guide = `<span class="equi-indent-guide" data-equi-indent="${level}" style="--equi-indent-level:${level};width:${level * 2}em;min-width:2em" contenteditable="false">\u200b</span>`;
   return rest ? `${guide}&nbsp;` : guide;
 }
 
@@ -144,10 +145,17 @@ function cellHtmlToText(cellHtml) {
  * 将单个 <table>…</table> 强制转为 GFM 管道表（不依赖 turndown-gfm 表头判定）。
  */
 export function htmlTableToGfm(tableHtml) {
+  const src = String(tableHtml ?? '');
+  const indentAttr = src.match(/data-equi-indent=["']?(\d+)/i);
+  const indentLevel = indentAttr
+    ? Math.max(0, Math.min(32, parseInt(indentAttr[1], 10) || 0))
+    : 0;
+  const indentPrefix = '  '.repeat(indentLevel);
+
   const rows = [];
   const trRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
   let trMatch;
-  while ((trMatch = trRe.exec(tableHtml))) {
+  while ((trMatch = trRe.exec(src))) {
     const cells = [];
     const cellRe = /<(td|th)\b[^>]*>([\s\S]*?)<\/\1>/gi;
     let cellMatch;
@@ -172,7 +180,7 @@ export function htmlTableToGfm(tableHtml) {
     `| ${sep.join(' | ')} |`,
     ...normalized.slice(1).map((row) => `| ${row.join(' | ')} |`),
   ];
-  return lines.join('\n');
+  return lines.map((line) => `${indentPrefix}${line}`).join('\n');
 }
 
 /**
@@ -210,8 +218,9 @@ function restoreTablePlaceholders(markdown, tables) {
   tables.forEach((tableMd, idx) => {
     const token = `EQUITABLEPLACEHOLDER${idx}`;
     const escaped = token.replace(/_/g, '\\_'); // 兼容旧占位符
-    const block = tableMd ? `\n\n${tableMd}\n\n` : '\n\n';
-    const replacement = block.trim() ? block.trim() : '';
+    // 只去掉首尾空行，不能用 trim()——否则会裁掉表格首行的大纲缩进空格
+    const body = String(tableMd ?? '').replace(/^\n+/, '').replace(/\n+$/, '');
+    const replacement = body ? `\n\n${body}\n\n` : '\n\n';
     md = md.split(token).join(replacement);
     md = md.split(escaped).join(replacement);
   });
@@ -311,7 +320,14 @@ export function convertTabSeparatedTables(markdown) {
         j += 1;
       }
 
-      const rows = block.map((row) => row.split('\t').map((c) => c.trim()));
+      // 行首空格视为大纲缩进（Tab 键已约定插入空格）；单元格之间才是真正的制表符
+      const outline = block.every((row) => row.startsWith(block[0].match(/^[ ]*/)?.[0] ?? ''))
+        ? block[0].match(/^[ ]*/)?.[0] ?? ''
+        : '';
+      const rows = block.map((row) => {
+        const body = outline && row.startsWith(outline) ? row.slice(outline.length) : row.trimStart();
+        return body.split('\t').map((c) => c.trim());
+      });
       const width = rows[0]?.length ?? 0;
       const sameWidth =
         width >= 2 &&
@@ -319,10 +335,12 @@ export function convertTabSeparatedTables(markdown) {
         rows.every((r) => r.length === width);
 
       if (sameWidth) {
-        out.push(`| ${rows[0].map(escapeCell).join(' | ')} |`);
-        out.push(`| ${rows[0].map(() => '---').join(' | ')} |`);
+        // 保留大纲缩进，交给后续 convertIndentedPipeTables 渲染为缩进表格
+        const p = outline;
+        out.push(`${p}| ${rows[0].map(escapeCell).join(' | ')} |`);
+        out.push(`${p}| ${rows[0].map(() => '---').join(' | ')} |`);
         for (let r = 1; r < rows.length; r += 1) {
-          out.push(`| ${rows[r].map(escapeCell).join(' | ')} |`);
+          out.push(`${p}| ${rows[r].map(escapeCell).join(' | ')} |`);
         }
         i = j;
         continue;
@@ -549,11 +567,136 @@ export function preserveTabSeparatedTables(previousMarkdown, nextMarkdown) {
   return nextLines.join('\n');
 }
 
+/**
+ * 拆分 GFM 管道表的一行单元格。
+ * @param {string} line
+ * @returns {string[]}
+ */
+function splitPipeCells(line) {
+  let s = String(line ?? '').trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map((c) => c.trim());
+}
+
+function isPipeTableRow(line) {
+  const t = String(line ?? '').trim();
+  return t.startsWith('|') && t.includes('|', 1);
+}
+
+function isPipeSeparatorRow(line) {
+  const cells = splitPipeCells(line);
+  return cells.length >= 2 && cells.every((c) => /^:?-{3,}:?$/.test(c));
+}
+
+function escapeHtmlText(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * 将「带行首缩进」的 GFM 管道表提前转成 HTML `<table>`。
+ * marked 默认不认缩进表格，会把 `| ... |` 当成普通段落；这里先识别并保留缩进层级。
+ */
+export function convertIndentedPipeTables(markdown) {
+  const lines = String(markdown ?? '').split('\n');
+  const out = [];
+  let inFence = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+
+    if (/^```/.test(trimmed)) {
+      inFence = !inFence;
+      out.push(line);
+      i += 1;
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      i += 1;
+      continue;
+    }
+
+    const indentMatch = line.match(/^([ \t]+)/);
+    const canStart =
+      indentMatch &&
+      isPipeTableRow(line) &&
+      i + 1 < lines.length &&
+      isPipeSeparatorRow(lines[i + 1]);
+
+    if (canStart) {
+      const indent = indentMatch[1];
+      const block = [];
+      let j = i;
+      while (j < lines.length) {
+        const cur = lines[j];
+        if (!cur.startsWith(indent)) break;
+        const body = cur.slice(indent.length);
+        if (!(isPipeTableRow(body) || isPipeSeparatorRow(body))) break;
+        // 缩进必须与表头一致（允许更深？不，同级表）
+        const curIndent = cur.match(/^([ \t]*)/)?.[1] ?? '';
+        if (curIndent !== indent) break;
+        block.push(body);
+        j += 1;
+      }
+
+      if (block.length >= 2 && isPipeSeparatorRow(block[1])) {
+        const rows = [];
+        for (let r = 0; r < block.length; r += 1) {
+          if (r === 1) continue; // skip separator
+          rows.push(splitPipeCells(block[r]));
+        }
+        const width = Math.max(2, ...rows.map((r) => r.length));
+        const normalized = rows.map((row) => {
+          const next = row.slice();
+          while (next.length < width) next.push('');
+          return next;
+        });
+        const level = Math.floor(indent.replace(/\t/g, '  ').length / 2);
+        const margin = level * 2;
+        const head = normalized[0]
+          .map((c) => `<th>${escapeHtmlText(c)}</th>`)
+          .join('');
+        const body = normalized
+          .slice(1)
+          .map(
+            (row) =>
+              `<tr>${row.map((c) => `<td>${escapeHtmlText(c)}</td>`).join('')}</tr>`,
+          )
+          .join('');
+        const table =
+          `<table class="equi-table" data-equi-indent="${level}" style="--equi-indent-level:${level};margin-left:${margin}em">` +
+          `<thead><tr>${head}</tr></thead>` +
+          (body ? `<tbody>${body}</tbody>` : '') +
+          `</table>`;
+        if (out.length > 0 && out[out.length - 1] !== '') out.push('');
+        out.push(table);
+        out.push('');
+        i = j;
+        continue;
+      }
+    }
+
+    out.push(line);
+    i += 1;
+  }
+
+  return out.join('\n');
+}
+
 /** Markdown 字符串 → HTML（供 TipTap） */
 export function markdownToHtml(markdown) {
   const src = convertHtmlTablesToGfm(markdown ?? '');
   if (!src.trim()) return '<p></p>';
-  const normalized = convertTabSeparatedTables(src);
+  // 先处理制表符表，再提升缩进管道表，最后交给 marked
+  const withTabTables = convertTabSeparatedTables(src);
+  const normalized = convertIndentedPipeTables(withTabTables);
   return encodeParagraphLeadingSpaces(marked.parse(normalized));
 }
 
@@ -572,7 +715,7 @@ export function htmlToMarkdown(html) {
   return md + (html.endsWith('\n') ? '' : '\n');
 }
 
-/** 压缩 GFM 管道表单元格内外多余空白/空行 */
+/** 压缩 GFM 管道表单元格内外多余空白/空行（保留行首大纲缩进） */
 function tidyGfmPipeTables(markdown) {
   const lines = String(markdown ?? '').split('\n');
   const out = [];
@@ -581,17 +724,23 @@ function tidyGfmPipeTables(markdown) {
       out.push(line);
       continue;
     }
+    const indent = line.match(/^[ \t]*/)?.[0] ?? '';
     // 跳过纯分隔行
     if (/^\s*\|?\s*:?-{3,}.*\|/.test(line)) {
-      out.push(line.replace(/\|\s+/g, '| ').replace(/\s+\|/g, ' |').replace(/^\s+/, ''));
+      const cleaned = line
+        .slice(indent.length)
+        .replace(/\|\s+/g, '| ')
+        .replace(/\s+\|/g, ' |');
+      out.push(`${indent}${cleaned}`);
       continue;
     }
     const cells = line
-      .replace(/^\s*\|/, '')
+      .slice(indent.length)
+      .replace(/^\|/, '')
       .replace(/\|\s*$/, '')
       .split('|')
       .map((c) => c.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim());
-    out.push(`| ${cells.join(' | ')} |`);
+    out.push(`${indent}| ${cells.join(' | ')} |`);
   }
   return out.join('\n');
 }

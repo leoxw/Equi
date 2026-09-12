@@ -478,10 +478,13 @@ body.outline-collapsed .outline-nav-empty {
 }
 
 /* 缩进导引：每级 2em（约两个汉字宽）+ 竖直对齐线 */
-.prose .ProseMirror .equi-indent-guide {
+.prose .ProseMirror .equi-indent-guide,
+.tiptap .equi-indent-guide,
+.ProseMirror .equi-indent-guide {
   --equi-indent-unit: 2em;
   --equi-indent-level: 1;
-  display: inline-block;
+  display: inline-block !important;
+  box-sizing: border-box;
   width: calc(var(--equi-indent-level) * var(--equi-indent-unit));
   min-width: var(--equi-indent-unit);
   height: 1.2em;
@@ -490,26 +493,44 @@ body.outline-collapsed .outline-nav-empty {
   vertical-align: -0.15em;
   pointer-events: none;
   user-select: none;
+  -webkit-user-select: none;
+  /* 回退色：不依赖 color-mix，保证对齐线在旧 WebView 也可见 */
   background-image: repeating-linear-gradient(
     to right,
     transparent 0,
     transparent calc(var(--equi-indent-unit) - 1px),
-    color-mix(in srgb, var(--muted) 42%, transparent) calc(var(--equi-indent-unit) - 1px),
-    color-mix(in srgb, var(--muted) 42%, transparent) var(--equi-indent-unit)
+    rgba(100, 100, 100, 0.35) calc(var(--equi-indent-unit) - 1px),
+    rgba(100, 100, 100, 0.35) var(--equi-indent-unit)
   );
   background-size: var(--equi-indent-unit) 100%;
   background-repeat: repeat-x;
   background-position: left top;
 }
 
-@media (prefers-color-scheme: dark) {
-  .prose .ProseMirror .equi-indent-guide {
+@supports (background-image: repeating-linear-gradient(to right, transparent 0, color-mix(in srgb, #000 40%, transparent) 1px)) {
+  .prose .ProseMirror .equi-indent-guide,
+  .tiptap .equi-indent-guide,
+  .ProseMirror .equi-indent-guide {
     background-image: repeating-linear-gradient(
       to right,
       transparent 0,
       transparent calc(var(--equi-indent-unit) - 1px),
-      color-mix(in srgb, var(--muted) 55%, transparent) calc(var(--equi-indent-unit) - 1px),
-      color-mix(in srgb, var(--muted) 55%, transparent) var(--equi-indent-unit)
+      color-mix(in srgb, var(--muted) 42%, transparent) calc(var(--equi-indent-unit) - 1px),
+      color-mix(in srgb, var(--muted) 42%, transparent) var(--equi-indent-unit)
+    );
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .prose .ProseMirror .equi-indent-guide,
+  .tiptap .equi-indent-guide,
+  .ProseMirror .equi-indent-guide {
+    background-image: repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(var(--equi-indent-unit) - 1px),
+      rgba(200, 200, 200, 0.4) calc(var(--equi-indent-unit) - 1px),
+      rgba(200, 200, 200, 0.4) var(--equi-indent-unit)
     );
   }
 }
@@ -815,6 +836,14 @@ body.outline-collapsed .outline-nav-empty {
   overflow: hidden;
   border: 1px solid var(--prose-heading-border);
   border-radius: 6px;
+}
+
+/* 大纲缩进下的表格：保留左侧缩进宽度（与导引同级 2em） */
+.prose .ProseMirror table[data-equi-indent],
+.prose .ProseMirror table.equi-table[data-equi-indent] {
+  width: auto;
+  max-width: calc(100% - (var(--equi-indent-level, 0) * 2em));
+  margin-left: calc(var(--equi-indent-level, 0) * 2em);
 }
 
 .prose .ProseMirror th,
