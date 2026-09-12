@@ -61,6 +61,110 @@ function normalizeEditorHtmlForMarkdown(html) {
     .replace(/<col\b[^>]*\/?>/gi, '');
 }
 
+/** 解码常见 HTML 实体（表格单元格纯文本） */
+function decodeBasicEntities(text) {
+  return String(text ?? '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+}
+
+/** 从单元格 HTML 提取单行纯文本 */
+function cellHtmlToText(cellHtml) {
+  return decodeBasicEntities(
+    String(cellHtml ?? '')
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<\/p>\s*<p\b[^>]*>/gi, ' ')
+      .replace(/<[^>]+>/g, ''),
+  )
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\|/g, '\\|')
+    .trim();
+}
+
+/**
+ * 将单个 <table>…</table> 强制转为 GFM 管道表（不依赖 turndown-gfm 表头判定）。
+ */
+export function htmlTableToGfm(tableHtml) {
+  const rows = [];
+  const trRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let trMatch;
+  while ((trMatch = trRe.exec(tableHtml))) {
+    const cells = [];
+    const cellRe = /<(td|th)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    let cellMatch;
+    while ((cellMatch = cellRe.exec(trMatch[1]))) {
+      cells.push(cellHtmlToText(cellMatch[2]));
+    }
+    if (cells.length > 0) rows.push(cells);
+  }
+  if (rows.length === 0) return '';
+
+  const width = Math.max(...rows.map((r) => r.length));
+  const normalized = rows.map((row) => {
+    const next = row.slice();
+    while (next.length < width) next.push('');
+    return next;
+  });
+
+  const header = normalized[0];
+  const sep = header.map(() => '---');
+  const lines = [
+    `| ${header.join(' | ')} |`,
+    `| ${sep.join(' | ')} |`,
+    ...normalized.slice(1).map((row) => `| ${row.join(' | ')} |`),
+  ];
+  return lines.join('\n');
+}
+
+/**
+ * 把 HTML / Markdown 中残留的 <table> 块全部换成 GFM 管道表。
+ * 用于：1) TipTap 回写 2) 打开已含 HTML 表的旧文档时清洗
+ */
+export function convertHtmlTablesToGfm(input) {
+  const src = String(input ?? '');
+  if (!/<table\b/i.test(src)) return src;
+  return src
+    .replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, (table) => {
+      const gfm = htmlTableToGfm(table);
+      return gfm ? `\n\n${gfm}\n\n` : '';
+    })
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * 回写前：先用占位符抽走所有 <table>，避免 turndown keep 成 HTML。
+ * 占位符避免下划线（turndown 会转成 \_）。
+ * @returns {{ html: string, tables: string[] }}
+ */
+function extractTablesAsPlaceholders(html) {
+  const tables = [];
+  const next = String(html ?? '').replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, (table) => {
+    const idx = tables.length;
+    tables.push(htmlTableToGfm(table));
+    return `<p>EQUITABLEPLACEHOLDER${idx}</p>`;
+  });
+  return { html: next, tables };
+}
+
+function restoreTablePlaceholders(markdown, tables) {
+  let md = String(markdown ?? '');
+  tables.forEach((tableMd, idx) => {
+    const token = `EQUITABLEPLACEHOLDER${idx}`;
+    const escaped = token.replace(/_/g, '\\_'); // 兼容旧占位符
+    const block = tableMd ? `\n\n${tableMd}\n\n` : '\n\n';
+    const replacement = block.trim() ? block.trim() : '';
+    md = md.split(token).join(replacement);
+    md = md.split(escaped).join(replacement);
+  });
+  return md.replace(/\n{3,}/g, '\n\n');
+}
+
 /** 将 <p> 行首空格写成 &nbsp;，避免 HTML 解析/turndown 折叠掉多级缩进 */
 function encodeParagraphLeadingSpaces(html) {
   return String(html ?? '').replace(/<p(\s[^>]*)?>(([ \t]|&#32;)+)/gi, (_, attrs = '', spaces) => {
@@ -400,7 +504,7 @@ export function preserveTabSeparatedTables(previousMarkdown, nextMarkdown) {
 
 /** Markdown 字符串 → HTML（供 TipTap） */
 export function markdownToHtml(markdown) {
-  const src = markdown ?? '';
+  const src = convertHtmlTablesToGfm(markdown ?? '');
   if (!src.trim()) return '<p></p>';
   const normalized = convertTabSeparatedTables(src);
   return encodeParagraphLeadingSpaces(marked.parse(normalized));
@@ -409,9 +513,14 @@ export function markdownToHtml(markdown) {
 /** TipTap/ProseMirror HTML → Markdown 字符串 */
 export function htmlToMarkdown(html) {
   if (!html || html === '<p></p>') return '';
-  const prepared = encodeParagraphLeadingSpaces(normalizeEditorHtmlForMarkdown(html));
+  // 强制抽走表格再 turndown，彻底避免 keep 成 HTML
+  const stripped = normalizeEditorHtmlForMarkdown(html);
+  const { html: withoutTables, tables } = extractTablesAsPlaceholders(stripped);
+  const prepared = encodeParagraphLeadingSpaces(withoutTables);
   let md = turndown.turndown(prepared).trimEnd();
-  // 清理管道表单元格内残留的多余空白，保持可读
+  md = restoreTablePlaceholders(md, tables);
+  // 兜底：若仍残留 <table>，再强制转换
+  md = convertHtmlTablesToGfm(md);
   md = tidyGfmPipeTables(md);
   return md + (html.endsWith('\n') ? '' : '\n');
 }
