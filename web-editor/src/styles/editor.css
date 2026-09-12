@@ -507,6 +507,18 @@ body.outline-collapsed .outline-nav-empty {
   background-position: left top;
 }
 
+/* 按 data 属性兜底定宽（即使 inline style 被 WebView 剥掉也能缩进） */
+.ProseMirror .equi-indent-guide[data-equi-indent="1"] { width: 2em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="2"] { width: 4em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="3"] { width: 6em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="4"] { width: 8em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="5"] { width: 10em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="6"] { width: 12em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="7"] { width: 14em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="8"] { width: 16em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="9"] { width: 18em; min-width: 2em; }
+.ProseMirror .equi-indent-guide[data-equi-indent="10"] { width: 20em; min-width: 2em; }
+
 @supports (background-image: repeating-linear-gradient(to right, transparent 0, color-mix(in srgb, #000 40%, transparent) 1px)) {
   .prose .ProseMirror .equi-indent-guide,
   .tiptap .equi-indent-guide,
