@@ -473,8 +473,45 @@ body.outline-collapsed .outline-nav-empty {
 .prose .ProseMirror p {
   margin-top: 0;
   margin-bottom: 16px;
-  /* 保留行首多级空格缩进的可见性（禁用 4 空格代码块后） */
+  /* 软换行大纲：保留行结构；缩进宽度由 .equi-indent-guide 控制 */
   white-space: pre-wrap;
+}
+
+/* 缩进导引：每级 2em（约两个汉字宽）+ 竖直对齐线 */
+.prose .ProseMirror .equi-indent-guide {
+  --equi-indent-unit: 2em;
+  --equi-indent-level: 1;
+  display: inline-block;
+  width: calc(var(--equi-indent-level) * var(--equi-indent-unit));
+  min-width: var(--equi-indent-unit);
+  height: 1.2em;
+  margin: 0;
+  padding: 0;
+  vertical-align: -0.15em;
+  pointer-events: none;
+  user-select: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(var(--equi-indent-unit) - 1px),
+    color-mix(in srgb, var(--muted) 42%, transparent) calc(var(--equi-indent-unit) - 1px),
+    color-mix(in srgb, var(--muted) 42%, transparent) var(--equi-indent-unit)
+  );
+  background-size: var(--equi-indent-unit) 100%;
+  background-repeat: repeat-x;
+  background-position: left top;
+}
+
+@media (prefers-color-scheme: dark) {
+  .prose .ProseMirror .equi-indent-guide {
+    background-image: repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(var(--equi-indent-unit) - 1px),
+      color-mix(in srgb, var(--muted) 55%, transparent) calc(var(--equi-indent-unit) - 1px),
+      color-mix(in srgb, var(--muted) 55%, transparent) var(--equi-indent-unit)
+    );
+  }
 }
 
 .prose .ProseMirror h1,
