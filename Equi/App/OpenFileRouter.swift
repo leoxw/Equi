@@ -21,6 +21,15 @@ final class OpenFileRouter: ObservableObject {
 
     var hasPending: Bool { !pendingURLs.isEmpty }
 
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "svg",
+    ]
+
+    /// 图片应由编辑器拖放插入，不应作为「打开文档」处理。
+    private static func isImageFile(_ url: URL) -> Bool {
+        imageExtensions.contains(url.pathExtension.lowercased())
+    }
+
     func enqueue(_ urls: [URL]) {
         dispatchPrecondition(condition: .onQueue(.main))
         let now = Date()
@@ -28,6 +37,7 @@ final class OpenFileRouter: ObservableObject {
 
         var added: [URL] = []
         for url in urls where url.isFileURL {
+            if Self.isImageFile(url) { continue }
             let standardized = url.standardizedFileURL
             let key = standardized.path
             if let last = recentPathKeys[key], now.timeIntervalSince(last) < 2 {

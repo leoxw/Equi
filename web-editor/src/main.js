@@ -12,6 +12,7 @@ import { installOutlineNav } from './ui/outline-nav.js';
 import { installPreviewZoom } from './ui/preview-zoom.js';
 import { createPaneVisibility } from './ui/pane-visibility.js';
 import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
+import { installImageInsert, buildMarkdownImage } from './media/image-insert.js';
 
 function boot() {
   const sourceHost = document.getElementById('source-editor');
@@ -236,6 +237,30 @@ function boot() {
       const force = typeof payload === 'boolean' ? payload : payload?.collapsed;
       return panes.togglePreview(force);
     },
+    /**
+     * 插入图片。payload: { src, alt? }；src 可为 data URL / http(s)。
+     * 写入当前真相源（源码或所见即所得），并触发同步。
+     */
+    insertImage(payload = {}) {
+      const src = typeof payload === 'string' ? payload : payload?.src;
+      const alt = typeof payload === 'string' ? 'image' : (payload?.alt || 'image');
+      if (!src) return false;
+      const truth = sync.getSourceOfTruth();
+      if (truth === 'wysiwyg' || (truth === 'none' && wysiwyg.editor?.isFocused)) {
+        const ok = wysiwyg.insertImage({ src, alt });
+        if (ok) outline?.refresh();
+        return !!ok;
+      }
+      const md = buildMarkdownImage({ src, alt });
+      // 前后补空行，避免粘在同一行
+      const snippet = `\n${md}\n`;
+      const ok = source.insertAtCursor(snippet);
+      if (ok) {
+        sync.onSourceChange(source.getMarkdown(), { immediate: true });
+        outline?.refresh();
+      }
+      return !!ok;
+    },
   };
 
   const welcome = `# MarkDuo
@@ -262,6 +287,10 @@ console.log('离线 Bundle，无外网依赖');
   if (!window.webkit?.messageHandlers?.editorBridge) {
     sync.setMarkdownFromNative({ markdown: welcome, revision: 0, markClean: true });
   }
+
+  installImageInsert({
+    insertImage: (payload) => window.EditorAPI.insertImage(payload),
+  });
 
   outline?.refresh();
   notifyReady();

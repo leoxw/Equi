@@ -115,8 +115,21 @@ final class DocumentModel: ObservableObject {
         return load(from: url)
     }
 
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "svg",
+    ]
+
     @discardableResult
     func load(from url: URL) -> Bool {
+        if Self.imageExtensions.contains(url.pathExtension.lowercased()) {
+            presentError(
+                NSError(domain: "Equi", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "图片请拖入编辑器正文插入，不能作为文档打开。",
+                ]),
+                title: "无法打开图片文件"
+            )
+            return false
+        }
         // Finder「打开方式」会带上 security-scoped 权限；读取期间保持访问
         let accessed = url.startAccessingSecurityScopedResource()
         defer {

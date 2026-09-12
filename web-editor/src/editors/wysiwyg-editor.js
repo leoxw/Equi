@@ -6,6 +6,7 @@ import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
+import Image from '@tiptap/extension-image';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
@@ -73,6 +74,11 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { rel: 'noopener', target: null },
+      }),
+      Image.configure({
+        inline: false,
+        allowBase64: true,
+        HTMLAttributes: { class: 'equi-image' },
       }),
       Placeholder.configure({
         placeholder: '在此直接排版与编辑…',
@@ -151,12 +157,23 @@ export function createWysiwygEditor(parent, { onChange, onFocus, onBlur, onScrol
     scrollHost.scrollTop = Math.max(0, Math.min(1, ratio)) * max;
   }
 
+  function insertImage({ src, alt } = {}) {
+    const url = String(src || '').trim();
+    if (!url) return false;
+    return editor
+      .chain()
+      .focus()
+      .setImage({ src: url, alt: String(alt || 'image') })
+      .run();
+  }
+
   return {
     editor,
     getHtml,
     setHtmlSilent,
     getScrollRatio,
     setScrollRatio,
+    insertImage,
     focus: () => editor.commands.focus('end'),
     undo: () => editor.commands.undo(),
     redo: () => editor.commands.redo(),

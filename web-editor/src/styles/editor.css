@@ -836,8 +836,13 @@ body.outline-collapsed .outline-nav-empty {
   background: var(--prose-heading-border);
 }
 
-.prose .ProseMirror img {
+.prose .ProseMirror img,
+.prose .ProseMirror img.equi-image {
   max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.6em 0;
+  border-radius: 4px;
 }
 
 .prose .ProseMirror table,

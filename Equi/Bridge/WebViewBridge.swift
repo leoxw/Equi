@@ -66,7 +66,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             )
         )
 
-        let wv = WKWebView(frame: root.bounds, configuration: config)
+        let wv = DropCatchingWKWebView(frame: root.bounds, configuration: config)
         wv.autoresizingMask = [.width, .height]
         wv.navigationDelegate = self
         wv.uiDelegate = self
@@ -75,6 +75,9 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             wv.underPageBackgroundColor = NSColor.textBackgroundColor
         }
         wv.allowsMagnification = true
+        wv.onImageFilesDropped = { [weak self] urls in
+            self?.insertDroppedImages(urls)
+        }
 
         #if DEBUG
         if #available(macOS 13.3, *) {
@@ -417,9 +420,26 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         guard let url = navigationAction.request.url else {
             decisionHandler(.cancel); return
         }
-        if url.isFileURL || url.absoluteString.hasPrefix("about:") {
+
+        // about: / 编辑器 Bundle 内资源：允许
+        if url.absoluteString.hasPrefix("about:") {
             decisionHandler(.allow); return
         }
+        if url.isFileURL {
+            if Self.isEditorBundleURL(url) {
+                decisionHandler(.allow); return
+            }
+            // Finder 拖入图片时，WKWebView 会尝试导航到 file:// 并报 Cannot open file。
+            // 拦截后改为插入 Markdown 图片，绝不整页替换成错误页。
+            if Self.isImageFileURL(url) {
+                decisionHandler(.cancel)
+                insertDroppedImages([url])
+                return
+            }
+            decisionHandler(.cancel)
+            return
+        }
+
         if navigationAction.navigationType == .linkActivated {
             NSWorkspace.shared.open(url)
         }
@@ -427,11 +447,145 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        showError(in: webView, title: "页面加载失败", detail: error.localizedDescription)
+        handleNavigationFailure(error)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        handleNavigationFailure(error)
+    }
+
+    /// 非编辑器资源的 file:// 失败（如拖图）不得摧毁已加载的编辑器。
+    private func handleNavigationFailure(_ error: Error) {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled {
+            return
+        }
+        if let failing = ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL,
+           failing.isFileURL,
+           !Self.isEditorBundleURL(failing) {
+            if Self.isImageFileURL(failing) {
+                insertDroppedImages([failing])
+            }
+            return
+        }
+        if let failingString = ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String,
+           let failing = URL(string: failingString),
+           failing.isFileURL,
+           !Self.isEditorBundleURL(failing) {
+            if Self.isImageFileURL(failing) {
+                insertDroppedImages([failing])
+            }
+            return
+        }
+        guard let webView else { return }
         showError(in: webView, title: "页面加载失败", detail: error.localizedDescription)
+    }
+
+    private func insertDroppedImages(_ urls: [URL]) {
+        for url in urls where Self.isImageFileURL(url) {
+            insertOneDroppedImage(url)
+        }
+    }
+
+    private func insertOneDroppedImage(_ url: URL) {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { url.stopAccessingSecurityScopedResource() }
+        }
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+            #if DEBUG
+            print("[WebViewBridge] cannot read dropped image", url.path)
+            #endif
+            return
+        }
+        // 过大图片不走 evaluateJavaScript（有长度限制）；提示用户改用更小图
+        if data.count > 2_500_000 {
+            let alert = NSAlert()
+            alert.messageText = "图片过大"
+            alert.informativeText = "拖入图片超过约 2.5MB，请压缩后再试，或先将图片拷贝到文稿同目录后用相对路径引用。"
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        let mime = Self.mimeType(forImageURL: url)
+        let b64 = data.base64EncodedString()
+        let src = "data:\(mime);base64,\(b64)"
+        let alt = url.deletingPathExtension().lastPathComponent
+        evaluateCall("window.EditorAPI && window.EditorAPI.insertImage", payload: [
+            "src": src,
+            "alt": alt,
+        ])
+    }
+
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "svg",
+    ]
+
+    private static func isImageFileURL(_ url: URL) -> Bool {
+        imageExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    private static func mimeType(forImageURL url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "bmp": return "image/bmp"
+        case "tif", "tiff": return "image/tiff"
+        case "svg": return "image/svg+xml"
+        case "heic", "heif": return "image/heic"
+        default: return "application/octet-stream"
+        }
+    }
+
+    private static func isEditorBundleURL(_ url: URL) -> Bool {
+        let path = url.resolvingSymlinksInPath().path
+        let bundlePath = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        if path.hasPrefix(bundlePath) { return true }
+        if let res = Bundle.main.resourceURL?.resolvingSymlinksInPath().path,
+           path.hasPrefix(res) {
+            return true
+        }
+        return false
+    }
+}
+
+/// 拦截 Finder 拖入的图片文件，避免 WKWebView 默认「打开文件」导航。
+final class DropCatchingWKWebView: WKWebView {
+    var onImageFilesDropped: (([URL]) -> Void)?
+
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "svg",
+    ]
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let urls = Self.imageFileURLs(from: sender)
+        if !urls.isEmpty { return .copy }
+        return super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let urls = Self.imageFileURLs(from: sender)
+        if !urls.isEmpty { return .copy }
+        return super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = Self.imageFileURLs(from: sender)
+        if !urls.isEmpty {
+            onImageFilesDropped?(urls)
+            return true
+        }
+        return super.performDragOperation(sender)
+    }
+
+    private static func imageFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        let pb = sender.draggingPasteboard
+        let urls = (pb.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true,
+        ]) as? [URL]) ?? []
+        return urls.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
     }
 }
 
