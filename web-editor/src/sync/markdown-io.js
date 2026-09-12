@@ -13,7 +13,8 @@ import { gfm } from 'turndown-plugin-gfm';
 
 marked.setOptions({
   gfm: true,
-  breaks: false,
+  // 单个换行也渲染为 <br>，否则大纲式纯文本会被挤成一段
+  breaks: true,
   pedantic: false,
 });
 
@@ -32,22 +33,26 @@ const turndown = new TurndownService({
   bulletListMarker: '-',
   emDelimiter: '*',
   strongDelimiter: '**',
+  // turndown 实际输出为 options.br + '\n'；置空即可得到单个换行
+  br: '',
 });
 turndown.use(gfm);
 
-// 回写 Markdown 时保留段落行首缩进（&nbsp; / 普通空格 / Tab）
-// 表格单元格内的 <p> 不能加空行，否则会破坏 GFM 管道表，甚至让 turndown 放弃转换。
+// 回写 Markdown 时保留段落缩进与软换行。
+// 表格单元格内的 <p> 不能加空行，否则会破坏 GFM 管道表。
 turndown.addRule('paragraphKeepIndent', {
   filter: 'p',
   replacement(content, node) {
-    const raw = node.textContent || '';
-    const lead = (raw.match(/^[\u00a0 \t]+/) || [''])[0].replace(/\u00a0/g, ' ');
-    const body = content.replace(/^[\u00a0\s]+/, '').replace(/[\u00a0\s]+$/, '');
+    let body = String(content ?? '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/&nbsp;/gi, ' ');
     const parent = node.parentNode?.nodeName;
     if (parent === 'TD' || parent === 'TH') {
-      return `${lead}${body}`;
+      return body.replace(/\n+/g, ' ').trim();
     }
-    return `\n\n${lead}${body}\n\n`;
+    // 去掉首尾多余空行，但保留行内换行与行首缩进
+    body = body.replace(/^\n+/, '').replace(/\n+$/, '');
+    return `\n\n${body}\n\n`;
   },
 });
 
@@ -58,7 +63,32 @@ turndown.addRule('paragraphKeepIndent', {
 function normalizeEditorHtmlForMarkdown(html) {
   return String(html ?? '')
     .replace(/<colgroup\b[^>]*>[\s\S]*?<\/colgroup>/gi, '')
-    .replace(/<col\b[^>]*\/?>/gi, '');
+    .replace(/<col\b[^>]*\/?>/gi, '')
+    // TipTap 空段落占位 br，回写时不应变成多余空行
+    .replace(/<br[^>]*class="[^"]*ProseMirror-trailingBreak[^"]*"[^>]*>/gi, '');
+}
+
+/** 把一段前导空白写成 &nbsp;，避免 HTML/ProseMirror 折叠缩进 */
+function encodeLeadingSpaces(spaces) {
+  return String(spaces ?? '')
+    .replace(/&#32;/gi, ' ')
+    .replace(/ /g, '&nbsp;')
+    .replace(/\t/g, '&nbsp;&nbsp;');
+}
+
+/**
+ * 保留可视缩进：
+ * - <p> 行首空格
+ * - <br> 后的行首空格（breaks:true 产生的软换行大纲）
+ */
+function encodeVisualWhitespace(html) {
+  return String(html ?? '')
+    .replace(/<p(\s[^>]*)?>(([ \t]|&#32;)+)/gi, (_, attrs = '', spaces) => {
+      return `<p${attrs || ''}>${encodeLeadingSpaces(spaces)}`;
+    })
+    .replace(/(<br\s*\/?>)(([ \t]|&#32;)+)/gi, (_, br, spaces) => {
+      return `${br}${encodeLeadingSpaces(spaces)}`;
+    });
 }
 
 /** 解码常见 HTML 实体（表格单元格纯文本） */
@@ -165,15 +195,9 @@ function restoreTablePlaceholders(markdown, tables) {
   return md.replace(/\n{3,}/g, '\n\n');
 }
 
-/** 将 <p> 行首空格写成 &nbsp;，避免 HTML 解析/turndown 折叠掉多级缩进 */
+/** 将行首 / <br> 后空格写成 &nbsp;，避免 HTML 解析与 ProseMirror 折叠缩进 */
 function encodeParagraphLeadingSpaces(html) {
-  return String(html ?? '').replace(/<p(\s[^>]*)?>(([ \t]|&#32;)+)/gi, (_, attrs = '', spaces) => {
-    const encoded = spaces
-      .replace(/&#32;/gi, ' ')
-      .replace(/ /g, '&nbsp;')
-      .replace(/\t/g, '&nbsp;&nbsp;');
-    return `<p${attrs || ''}>${encoded}`;
-  });
+  return encodeVisualWhitespace(html);
 }
 
 // 保留富文本色/下划线/高亮（标准 Markdown 无对应语法，落盘为内联 HTML）
