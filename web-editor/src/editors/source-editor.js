@@ -165,6 +165,27 @@ export function createSourceEditor(parent, { onChange, onFocus, onBlur, onScroll
     return true;
   }
 
+  /**
+   * 在当前光标处插入文本（用于拖入图片等）。
+   * @param {string} text
+   * @param {{ select?: boolean }} [opts]
+   */
+  function insertAtCursor(text, opts = {}) {
+    const insert = String(text ?? '');
+    if (!insert) return false;
+    const { from, to } = view.state.selection.main;
+    const end = from + insert.length;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: opts.select
+        ? { anchor: from, head: end }
+        : { anchor: end, head: end },
+      scrollIntoView: true,
+    });
+    view.focus();
+    return true;
+  }
+
   return {
     view,
     getMarkdown,
@@ -172,6 +193,7 @@ export function createSourceEditor(parent, { onChange, onFocus, onBlur, onScroll
     getScrollRatio,
     setScrollRatio,
     revealHeading,
+    insertAtCursor,
     focus: () => view.focus(),
     undo: () => undo(view),
     redo: () => redo(view),

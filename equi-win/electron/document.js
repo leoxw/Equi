@@ -101,6 +101,15 @@ class DocumentModel {
   }
 
   loadFromPath(filePath) {
+    const ext = path.extname(filePath || '').toLowerCase().replace(/^\./, '');
+    const imageExts = new Set([
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif', 'svg',
+    ]);
+    if (imageExts.has(ext)) {
+      const err = new Error('图片请拖入编辑器正文插入，不能作为文档打开。');
+      err.code = 'EQUI_IMAGE_NOT_DOCUMENT';
+      throw err;
+    }
     const text = fs.readFileSync(filePath, 'utf8');
     this.filePath = filePath;
     this.kind = inferKind(filePath);

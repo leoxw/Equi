@@ -96,8 +96,39 @@ webview.addEventListener('ipc-message', (event) => {
   if (payload) window.equiShell.forwardBridge(payload);
 });
 
+function isImageFileUrl(url) {
+  try {
+    const u = String(url || '');
+    return /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|heif|svg)([?#].*)?$/i.test(u);
+  } catch (_) {
+    return false;
+  }
+}
+
+function isEditorDocumentUrl(url) {
+  const u = String(url || '');
+  return /EquiEditor\.html|\/Editor\/index\.html/i.test(u);
+}
+
+// 拖入图片时 Electron webview 可能尝试导航到 file:// 图片路径；拦截以免整页失败。
+webview.addEventListener('will-navigate', (e) => {
+  const url = e.url || '';
+  if (isEditorDocumentUrl(url)) return;
+  if (url.startsWith('file:') && isImageFileUrl(url)) {
+    e.preventDefault();
+    return;
+  }
+  if (url.startsWith('file:') && !isEditorDocumentUrl(url)) {
+    e.preventDefault();
+  }
+});
+
 webview.addEventListener('did-fail-load', (e) => {
-  if (e.errorCode === -3) return;
+  if (e.errorCode === -3) return; // 已取消
+  // 拖入图片导致的 file:// 失败：忽略，不覆盖编辑器
+  if (isImageFileUrl(e.validatedURL) || (String(e.validatedURL || '').startsWith('file:') && !isEditorDocumentUrl(e.validatedURL))) {
+    return;
+  }
   banner.hidden = false;
   banner.className = 'banner';
   banner.textContent = `页面加载失败：${e.errorDescription || e.errorCode}\n${e.validatedURL || ''}`;
