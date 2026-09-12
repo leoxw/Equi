@@ -17,6 +17,15 @@ marked.setOptions({
   pedantic: false,
 });
 
+// 关闭「行首 4 空格 / Tab → 缩进代码块」：允许多级空格缩进，代码块仅认围栏 ```。
+marked.use({
+  tokenizer: {
+    code() {
+      return undefined;
+    },
+  },
+});
+
 const turndown = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
@@ -25,6 +34,28 @@ const turndown = new TurndownService({
   strongDelimiter: '**',
 });
 turndown.use(gfm);
+
+// 回写 Markdown 时保留段落行首缩进（&nbsp; / 普通空格 / Tab）
+turndown.addRule('paragraphKeepIndent', {
+  filter: 'p',
+  replacement(content, node) {
+    const raw = node.textContent || '';
+    const lead = (raw.match(/^[\u00a0 \t]+/) || [''])[0].replace(/\u00a0/g, ' ');
+    const body = content.replace(/^[\u00a0\s]+/, '').replace(/[\u00a0\s]+$/, '');
+    return `\n\n${lead}${body}\n\n`;
+  },
+});
+
+/** 将 <p> 行首空格写成 &nbsp;，避免 HTML 解析/turndown 折叠掉多级缩进 */
+function encodeParagraphLeadingSpaces(html) {
+  return String(html ?? '').replace(/<p(\s[^>]*)?>(([ \t]|&#32;)+)/gi, (_, attrs = '', spaces) => {
+    const encoded = spaces
+      .replace(/&#32;/gi, ' ')
+      .replace(/ /g, '&nbsp;')
+      .replace(/\t/g, '&nbsp;&nbsp;');
+    return `<p${attrs || ''}>${encoded}`;
+  });
+}
 
 // 保留富文本色/下划线/高亮（标准 Markdown 无对应语法，落盘为内联 HTML）
 turndown.addRule('equiColoredSpan', {
@@ -357,13 +388,14 @@ export function markdownToHtml(markdown) {
   const src = markdown ?? '';
   if (!src.trim()) return '<p></p>';
   const normalized = convertTabSeparatedTables(src);
-  return marked.parse(normalized);
+  return encodeParagraphLeadingSpaces(marked.parse(normalized));
 }
 
 /** TipTap/ProseMirror HTML → Markdown 字符串 */
 export function htmlToMarkdown(html) {
   if (!html || html === '<p></p>') return '';
-  return turndown.turndown(html).trimEnd() + (html.endsWith('\n') ? '' : '\n');
+  const prepared = encodeParagraphLeadingSpaces(html);
+  return turndown.turndown(prepared).trimEnd() + (html.endsWith('\n') ? '' : '\n');
 }
 
 /** 字数统计（与 Swift 侧粗略策略对齐） */

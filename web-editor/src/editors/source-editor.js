@@ -24,6 +24,7 @@ import {
   syntaxHighlighting,
   defaultHighlightStyle,
   bracketMatching,
+  indentUnit,
 } from '@codemirror/language';
 
 export function createSourceEditor(parent, { onChange, onFocus, onBlur, onScroll }) {
@@ -57,6 +58,9 @@ export function createSourceEditor(parent, { onChange, onFocus, onBlur, onScroll
       bracketMatching(),
       history(),
       markdown(),
+      // 显式 2 空格缩进单位：可多级 Tab；不再把「两级=4 空格」当成代码块（见 markdown-io）
+      indentUnit.of('  '),
+      EditorState.tabSize.of(2),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
