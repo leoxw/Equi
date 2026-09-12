@@ -94,9 +94,10 @@ function encodeLeadingSpaces(spaces) {
   if (level <= 0) {
     return rest ? '&nbsp;' : '';
   }
-  // 显式写上 width，避免部分 WebView 对仅 CSS 变量的 calc 支持不稳
+  // 不要写 style/contenteditable：TextStyle/Color 会把带 style 的 span 吃成着色文本，
+  // 导致 indentGuide 解析失败、缩进宽度丢失。宽度交给 CSS [data-equi-indent] + NodeView。
   // 零宽字符：避免 turndown 跳过空 span（否则回写会丢掉缩进）
-  const guide = `<span class="equi-indent-guide" data-equi-indent="${level}" style="--equi-indent-level:${level};width:${level * 2}em;min-width:2em" contenteditable="false">\u200b</span>`;
+  const guide = `<span class="equi-indent-guide" data-equi-indent="${level}">\u200b</span>`;
   return rest ? `${guide}&nbsp;` : guide;
 }
 
