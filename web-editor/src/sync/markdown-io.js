@@ -36,15 +36,30 @@ const turndown = new TurndownService({
 turndown.use(gfm);
 
 // 回写 Markdown 时保留段落行首缩进（&nbsp; / 普通空格 / Tab）
+// 表格单元格内的 <p> 不能加空行，否则会破坏 GFM 管道表，甚至让 turndown 放弃转换。
 turndown.addRule('paragraphKeepIndent', {
   filter: 'p',
   replacement(content, node) {
     const raw = node.textContent || '';
     const lead = (raw.match(/^[\u00a0 \t]+/) || [''])[0].replace(/\u00a0/g, ' ');
     const body = content.replace(/^[\u00a0\s]+/, '').replace(/[\u00a0\s]+$/, '');
+    const parent = node.parentNode?.nodeName;
+    if (parent === 'TD' || parent === 'TH') {
+      return `${lead}${body}`;
+    }
     return `\n\n${lead}${body}\n\n`;
   },
 });
+
+/**
+ * TipTap 表格常带 <colgroup>/<col>，会导致 turndown-plugin-gfm
+ * 误判「无表头行」而 keep 整表为 HTML。回写前先剥掉这些装饰。
+ */
+function normalizeEditorHtmlForMarkdown(html) {
+  return String(html ?? '')
+    .replace(/<colgroup\b[^>]*>[\s\S]*?<\/colgroup>/gi, '')
+    .replace(/<col\b[^>]*\/?>/gi, '');
+}
 
 /** 将 <p> 行首空格写成 &nbsp;，避免 HTML 解析/turndown 折叠掉多级缩进 */
 function encodeParagraphLeadingSpaces(html) {
@@ -394,8 +409,35 @@ export function markdownToHtml(markdown) {
 /** TipTap/ProseMirror HTML → Markdown 字符串 */
 export function htmlToMarkdown(html) {
   if (!html || html === '<p></p>') return '';
-  const prepared = encodeParagraphLeadingSpaces(html);
-  return turndown.turndown(prepared).trimEnd() + (html.endsWith('\n') ? '' : '\n');
+  const prepared = encodeParagraphLeadingSpaces(normalizeEditorHtmlForMarkdown(html));
+  let md = turndown.turndown(prepared).trimEnd();
+  // 清理管道表单元格内残留的多余空白，保持可读
+  md = tidyGfmPipeTables(md);
+  return md + (html.endsWith('\n') ? '' : '\n');
+}
+
+/** 压缩 GFM 管道表单元格内外多余空白/空行 */
+function tidyGfmPipeTables(markdown) {
+  const lines = String(markdown ?? '').split('\n');
+  const out = [];
+  for (const line of lines) {
+    if (!/^\s*\|/.test(line) || !/\|/.test(line.slice(1))) {
+      out.push(line);
+      continue;
+    }
+    // 跳过纯分隔行
+    if (/^\s*\|?\s*:?-{3,}.*\|/.test(line)) {
+      out.push(line.replace(/\|\s+/g, '| ').replace(/\s+\|/g, ' |').replace(/^\s+/, ''));
+      continue;
+    }
+    const cells = line
+      .replace(/^\s*\|/, '')
+      .replace(/\|\s*$/, '')
+      .split('|')
+      .map((c) => c.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim());
+    out.push(`| ${cells.join(' | ')} |`);
+  }
+  return out.join('\n');
 }
 
 /** 字数统计（与 Swift 侧粗略策略对齐） */
