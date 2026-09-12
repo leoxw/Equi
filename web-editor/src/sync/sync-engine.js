@@ -15,6 +15,7 @@ import {
   htmlToMarkdown,
   countStats,
   preserveTabSeparatedTables,
+  convertHtmlTablesToGfm,
 } from './markdown-io.js';
 import { notifyContentChange } from '../bridge.js';
 
@@ -60,7 +61,13 @@ export function createSyncEngine({ source, wysiwyg }) {
     if (sourceOfTruth === 'wysiwyg') return; // 右栏为真相源时忽略左栏回声
 
     const run = () => {
-      const md = typeof markdown === 'function' ? markdown() : markdown;
+      let md = typeof markdown === 'function' ? markdown() : markdown;
+      // 左栏若已残留 HTML 表，同步时一并清洗为管道表
+      const cleaned = convertHtmlTablesToGfm(md);
+      if (cleaned !== md) {
+        md = cleaned;
+        source.setMarkdownSilent(md);
+      }
       if (fingerprint(md) === fingerprint(lastMarkdown) && !immediate) {
         // 仍可能需要上报 dirty（例如撤销到基线）
         emitToSwift(md);
@@ -115,7 +122,10 @@ export function createSyncEngine({ source, wysiwyg }) {
 
   // —— 外部（Swift）注入 ——
   function setMarkdownFromNative({ markdown, revision, markClean }) {
-    const md = markdown ?? '';
+    const original = markdown ?? '';
+    // 清洗历史文档中残留的 <table> HTML，写回管道表
+    const md = convertHtmlTablesToGfm(original);
+    const wasSanitized = md !== original;
     if (revision != null && revision === lastRevision && fingerprint(md) === fingerprint(lastMarkdown)) {
       return;
     }
@@ -126,14 +136,15 @@ export function createSyncEngine({ source, wysiwyg }) {
       source.setMarkdownSilent(md);
       wysiwyg.setHtmlSilent(markdownToHtml(md));
       lastMarkdown = md;
-      if (markClean) baselineMarkdown = md;
-      dirty = markClean ? false : md !== baselineMarkdown;
-      emitToSwift(md);
+      if (markClean && !wasSanitized) baselineMarkdown = md;
+      dirty = markClean && !wasSanitized ? false : md !== baselineMarkdown;
     } finally {
       requestAnimationFrame(() => {
         syncLock = false;
       });
     }
+    // 若做了 HTML→管道表清洗，通知宿主可保存
+    if (wasSanitized) emitToSwift(md);
   }
 
   function markClean(markdown) {
