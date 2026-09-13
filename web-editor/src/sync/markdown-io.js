@@ -60,6 +60,9 @@ turndown.addRule('equiIndentGuide', {
 
 // 回写 Markdown 时保留段落缩进与软换行。
 // 表格单元格内的 <p> 不能加空行，否则会破坏 GFM 管道表。
+// 空段落用零宽空格占位，避免 turndown / marked 往返后丢掉 Enter 产生的空行。
+const EMPTY_PARA_PLACEHOLDER = '\u200b';
+
 turndown.addRule('paragraphKeepIndent', {
   filter: 'p',
   replacement(content, node) {
@@ -72,6 +75,10 @@ turndown.addRule('paragraphKeepIndent', {
     }
     // 去掉首尾多余空行，但保留行内换行与行首缩进
     body = body.replace(/^\n+/, '').replace(/\n+$/, '');
+    // TipTap Enter 产生的空段落：保留为占位，否则回写后空行消失
+    if (!body || body === EMPTY_PARA_PLACEHOLDER) {
+      return `\n\n${EMPTY_PARA_PLACEHOLDER}\n\n`;
+    }
     return `\n\n${body}\n\n`;
   },
 });
@@ -79,12 +86,18 @@ turndown.addRule('paragraphKeepIndent', {
 /**
  * TipTap 表格常带 <colgroup>/<col>，会导致 turndown-plugin-gfm
  * 误判「无表头行」而 keep 整表为 HTML。回写前先剥掉这些装饰。
+ * 空段落（仅 ProseMirror trailingBreak / 空 <br>）改为零宽占位，保留 Enter。
  */
 function normalizeEditorHtmlForMarkdown(html) {
   return String(html ?? '')
     .replace(/<colgroup\b[^>]*>[\s\S]*?<\/colgroup>/gi, '')
     .replace(/<col\b[^>]*\/?>/gi, '')
-    // TipTap 空段落占位 br，回写时不应变成多余空行
+    // 空段落：仅 trailingBreak 或空 br → 零宽占位，避免被 turndown 丢弃
+    .replace(
+      /<p(\b[^>]*)>(?:\s|&nbsp;|\u00a0)*(?:<br\b[^>]*>)?(?:\s|&nbsp;|\u00a0)*<\/p>/gi,
+      `<p$1>${EMPTY_PARA_PLACEHOLDER}</p>`,
+    )
+    // 非空段落里的 trailingBreak 占位 br 再剥掉
     .replace(/<br[^>]*class="[^"]*ProseMirror-trailingBreak[^"]*"[^>]*>/gi, '');
 }
 
