@@ -12,7 +12,8 @@ import { installOutlineNav } from './ui/outline-nav.js';
 import { installPreviewZoom } from './ui/preview-zoom.js';
 import { createPaneVisibility } from './ui/pane-visibility.js';
 import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
-import { installImageInsert, buildMarkdownImage } from './media/image-insert.js';
+import { installImageInsert, buildMarkdownImage, completeImportMedia as resolveImportMedia } from './media/image-insert.js';
+import { setDocumentContext as applyDocumentContext } from './media/document-context.js';
 
 function boot() {
   const sourceHost = document.getElementById('source-editor');
@@ -238,21 +239,23 @@ function boot() {
       return panes.togglePreview(force);
     },
     /**
-     * 插入图片。payload: { src, alt? }；src 可为 data URL / http(s)。
-     * 写入当前真相源（源码或所见即所得），并触发同步。
+     * 插入图片。payload: { src, markdownSrc?, alt? }
+     * - src：预览用（可为 file:// 绝对路径）
+     * - markdownSrc：写入 Markdown 的相对路径（如 Notesmedia/a.png）；缺省则用 src
      */
     insertImage(payload = {}) {
       const src = typeof payload === 'string' ? payload : payload?.src;
+      const markdownSrc =
+        typeof payload === 'string' ? payload : (payload?.markdownSrc || payload?.src);
       const alt = typeof payload === 'string' ? 'image' : (payload?.alt || 'image');
-      if (!src) return false;
+      if (!src && !markdownSrc) return false;
       const truth = sync.getSourceOfTruth();
       if (truth === 'wysiwyg' || (truth === 'none' && wysiwyg.editor?.isFocused)) {
-        const ok = wysiwyg.insertImage({ src, alt });
+        const ok = wysiwyg.insertImage({ src: src || markdownSrc, alt });
         if (ok) outline?.refresh();
         return !!ok;
       }
-      const md = buildMarkdownImage({ src, alt });
-      // 前后补空行，避免粘在同一行
+      const md = buildMarkdownImage({ src: markdownSrc || src, alt });
       const snippet = `\n${md}\n`;
       const ok = source.insertAtCursor(snippet);
       if (ok) {
@@ -260,6 +263,23 @@ function boot() {
         outline?.refresh();
       }
       return !!ok;
+    },
+    /** 原生下发文稿目录，用于解析相对媒体路径 */
+    setDocumentContext(payload = {}) {
+      applyDocumentContext(payload);
+      // 已有内容时按新基路径重解析预览
+      try {
+        const md = sync.getMarkdown();
+        if (md) sync.setMarkdownFromNative({ markdown: md, markClean: !sync.isDirty?.() });
+      } catch (_) {
+        /* ignore */
+      }
+      return true;
+    },
+    /** 原生导入媒体完成回调 */
+    completeImportMedia(payload = {}) {
+      resolveImportMedia(payload);
+      return true;
     },
   };
 

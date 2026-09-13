@@ -87,6 +87,8 @@ struct EquiCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("新建") {
+                guard let url = DocumentModel.promptCreateNewFile() else { return }
+                OpenFileRouter.shared.enqueue([url])
                 openWindow(id: "document")
             }
             .keyboardShortcut("n", modifiers: .command)

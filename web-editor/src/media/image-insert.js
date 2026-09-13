@@ -1,10 +1,15 @@
 /**
- * 拖拽 / 粘贴图片 → 插入 Markdown 图片（data URL，适配沙盒 CSP img-src data:）。
- * 同时拦截默认行为，避免 WKWebView / Electron 把图片当成「打开文件」导航。
+ * 拖拽 / 粘贴图片 → 经原生桥写入「文稿名media」文件夹，再插入相对路径。
+ * 无原生桥时（浏览器开发态）回退为 data URL。
  */
+
+import { postToSwift } from '../bridge.js';
 
 const IMAGE_MIME = /^image\/(png|jpe?g|gif|webp|bmp|svg\+xml|tiff?)$/i;
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|tiff?|heic)$/i;
+
+const pendingImports = new Map();
+let requestSeq = 0;
 
 function isImageFile(file) {
   if (!file) return false;
@@ -26,22 +31,100 @@ function altFromName(name) {
   return base.replace(/[\[\]]/g, '') || 'image';
 }
 
+function hasNativeBridge() {
+  return Boolean(
+    window.webkit?.messageHandlers?.editorBridge ||
+      window.equiNative?.postMessage ||
+      window.chrome?.webview?.postMessage,
+  );
+}
+
+/** 请求原生写入 {stem}media，返回 { relativePath, displaySrc, alt }。 */
+export function requestImportMedia({ fileName, base64, mimeType }) {
+  const requestId = `media-${Date.now()}-${++requestSeq}`;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingImports.delete(requestId);
+      reject(new Error('导入媒体超时'));
+    }, 60000);
+    pendingImports.set(requestId, {
+      resolve: (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      reject: (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    });
+    const ok = postToSwift({
+      type: 'importMedia',
+      requestId,
+      fileName: fileName || 'image.png',
+      mimeType: mimeType || '',
+      base64,
+    });
+    if (!ok) {
+      pendingImports.delete(requestId);
+      clearTimeout(timer);
+      reject(new Error('原生桥不可用'));
+    }
+  });
+}
+
+/** 原生回调：window.EditorAPI.completeImportMedia */
+export function completeImportMedia(payload = {}) {
+  const requestId = payload.requestId;
+  const pending = pendingImports.get(requestId);
+  if (!pending) return;
+  pendingImports.delete(requestId);
+  if (payload.ok) {
+    pending.resolve({
+      relativePath: payload.relativePath,
+      displaySrc: payload.displaySrc || payload.relativePath,
+      alt: payload.alt || 'image',
+    });
+  } else {
+    pending.reject(new Error(payload.error || '导入媒体失败'));
+  }
+}
+
 /**
- * @param {{ insertImage: (payload: { src: string, alt?: string }) => boolean | void }} api
+ * @param {{ insertImage: (payload: { src: string, markdownSrc?: string, alt?: string }) => boolean | void }} api
  */
 export function installImageInsert({ insertImage }) {
   if (typeof insertImage !== 'function') return () => {};
+
+  async function importOneFile(file) {
+    const alt = altFromName(file.name);
+    if (hasNativeBridge()) {
+      const dataUrl = await readFileAsDataURL(file);
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const imported = await requestImportMedia({
+        fileName: file.name || 'image.png',
+        base64,
+        mimeType: file.type || '',
+      });
+      insertImage({
+        src: imported.displaySrc,
+        markdownSrc: imported.relativePath,
+        alt: imported.alt || alt,
+      });
+      return;
+    }
+    const src = await readFileAsDataURL(file);
+    if (src) insertImage({ src, markdownSrc: src, alt });
+  }
 
   async function handleFiles(fileList) {
     const files = [...(fileList || [])].filter(isImageFile);
     if (!files.length) return false;
     for (const file of files) {
       try {
-        const src = await readFileAsDataURL(file);
-        if (!src) continue;
-        insertImage({ src, alt: altFromName(file.name) });
+        await importOneFile(file);
       } catch (err) {
         console.warn('[image-insert] failed', file?.name, err);
+        window.alert?.(err?.message || '插入图片失败');
       }
     }
     return true;
@@ -61,8 +144,7 @@ export function installImageInsert({ insertImage }) {
   async function onDrop(event) {
     const files = event.dataTransfer?.files;
     if (!files?.length) return;
-    const hasImage = [...files].some(isImageFile);
-    if (!hasImage) return;
+    if (![...files].some(isImageFile)) return;
     event.preventDefault();
     event.stopPropagation();
     await handleFiles(files);
@@ -84,7 +166,6 @@ export function installImageInsert({ insertImage }) {
     await handleFiles(imageFiles);
   }
 
-  // 捕获阶段优先于编辑器默认处理，阻止 WebView 导航到 file://
   document.addEventListener('dragover', onDragOver, true);
   document.addEventListener('drop', onDrop, true);
   document.addEventListener('paste', onPaste, true);
@@ -96,7 +177,6 @@ export function installImageInsert({ insertImage }) {
   };
 }
 
-/** 供原生桥调用：直接插入已编码的 data URL / http(s) 路径 */
 export function buildMarkdownImage({ src, alt }) {
   const safeAlt = String(alt || 'image').replace(/[\[\]]/g, '');
   const safeSrc = String(src || '').trim();

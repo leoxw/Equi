@@ -23,6 +23,10 @@ final class DocumentModel: ObservableObject {
     /// 最近一次由原生侧主动下发到 Web 的内容版本号，用于去重。
     private(set) var nativeRevision: UInt64 = 0
 
+    /// 打开/保存后保持的 security-scoped 访问（沙盒下读写同目录媒体需要）。
+    private var securityScopedURL: URL?
+    private var hasSecurityScopedAccess = false
+
     func markEditorFailed(_ message: String) {
         editorLoadError = message
         isEditorReady = false
@@ -90,9 +94,158 @@ final class DocumentModel: ObservableObject {
         wordCount = max(latinWords, cjk)
     }
 
+    // MARK: - Media folder ({stem}media)
+
+    /// 文稿 `Notes.md` → 文件夹名 `Notesmedia`（仅插入媒体时创建）。
+    var mediaFolderName: String? {
+        guard let fileURL else { return nil }
+        return fileURL.deletingPathExtension().lastPathComponent + "media"
+    }
+
+    var mediaFolderURL: URL? {
+        guard let fileURL, let mediaFolderName else { return nil }
+        return fileURL.deletingLastPathComponent().appendingPathComponent(mediaFolderName, isDirectory: true)
+    }
+
+    /// 文稿所在目录的 file URL（尾部带 `/`），供 Web 解析相对媒体路径。
+    var documentDirectoryURLString: String? {
+        guard let fileURL else { return nil }
+        var dir = fileURL.deletingLastPathComponent()
+        if !dir.absoluteString.hasSuffix("/") {
+            dir = URL(fileURLWithPath: dir.path + "/", isDirectory: true)
+        }
+        return dir.absoluteString
+    }
+
+    private func retainSecurityScope(for url: URL) {
+        releaseSecurityScope()
+        securityScopedURL = url
+        hasSecurityScopedAccess = url.startAccessingSecurityScopedResource()
+    }
+
+    private func releaseSecurityScope() {
+        if hasSecurityScopedAccess, let securityScopedURL {
+            securityScopedURL.stopAccessingSecurityScopedResource()
+        }
+        securityScopedURL = nil
+        hasSecurityScopedAccess = false
+    }
+
+    /// 确保 `{stem}media` 存在；仅在插入媒体时调用。
+    @discardableResult
+    func ensureMediaFolder() throws -> URL {
+        guard let folder = mediaFolderURL else {
+            throw NSError(domain: "Equi", code: 10, userInfo: [
+                NSLocalizedDescriptionKey: "请先保存文稿，再插入图片或媒体文件。",
+            ])
+        }
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: folder.path) {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        return folder
+    }
+
+    /// 将本地文件拷入媒体目录，返回 Markdown 相对路径（如 `Notesmedia/a.png`）。
+    func importMediaFile(from sourceURL: URL) throws -> String {
+        let folder = try ensureMediaFolder()
+        let folderName = mediaFolderName!
+        let accessed = sourceURL.startAccessingSecurityScopedResource()
+        defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+
+        let original = sourceURL.lastPathComponent
+        let destName = uniqueMediaFileName(original, in: folder)
+        let dest = folder.appendingPathComponent(destName)
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: dest)
+        return "\(folderName)/\(destName)"
+    }
+
+    /// 将内存数据写入媒体目录（粘贴图片等），返回相对路径。
+    func importMediaData(_ data: Data, preferredName: String) throws -> String {
+        let folder = try ensureMediaFolder()
+        let folderName = mediaFolderName!
+        let destName = uniqueMediaFileName(preferredName, in: folder)
+        let dest = folder.appendingPathComponent(destName)
+        try data.write(to: dest, options: .atomic)
+        return "\(folderName)/\(destName)"
+    }
+
+    private func uniqueMediaFileName(_ original: String, in folder: URL) -> String {
+        let fm = FileManager.default
+        let trimmed = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = trimmed.isEmpty ? "image.png" : trimmed
+        var candidate = baseName
+        let stem = (baseName as NSString).deletingPathExtension
+        let ext = (baseName as NSString).pathExtension
+        var index = 1
+        while fm.fileExists(atPath: folder.appendingPathComponent(candidate).path) {
+            if ext.isEmpty {
+                candidate = "\(stem)-\(index)"
+            } else {
+                candidate = "\(stem)-\(index).\(ext)"
+            }
+            index += 1
+        }
+        return candidate
+    }
+
+    /// 相对媒体路径 → 预览用 URL（`equimedia:///`，由 WKURLSchemeHandler 读盘）。
+    func absoluteMediaURLString(forRelativePath relative: String) -> String? {
+        guard fileURL != nil else { return nil }
+        let trimmed = relative.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !trimmed.isEmpty else { return nil }
+        let encoded = trimmed
+            .split(separator: "/")
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+            .joined(separator: "/")
+        return "equimedia:///\(encoded)"
+    }
+
+    /// 解析相对媒体路径为磁盘上的绝对文件 URL。
+    func resolveMediaFileURL(forRelativePath relative: String) -> URL? {
+        guard let fileURL else { return nil }
+        let trimmed = relative.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !trimmed.isEmpty else { return nil }
+        return fileURL.deletingLastPathComponent().appendingPathComponent(trimmed)
+    }
+
     // MARK: - File Operations
 
+    /// 新建：先弹出存储面板指定路径与文件名，写入空文稿并返回 URL。
+    static func promptCreateNewFile() -> URL? {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.message = "选择新建文稿的保存位置与文件名"
+        panel.prompt = "创建"
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [.markdown, .plainText]
+        panel.nameFieldStringValue = "未命名.md"
+
+        let accessory = SaveFormatAccessory(documentKind: .markdown)
+        accessory.attach(to: panel)
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return nil
+        }
+        let target = accessory.resolvedURL(from: url)
+        do {
+            try "".write(to: target, atomically: true, encoding: .utf8)
+            return target
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "无法创建文稿"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+            return nil
+        }
+    }
+
     func newDocument() {
+        releaseSecurityScope()
         fileURL = nil
         kind = .markdown
         replaceContent("", markingClean: true)
@@ -130,11 +283,8 @@ final class DocumentModel: ObservableObject {
             )
             return false
         }
-        // Finder「打开方式」会带上 security-scoped 权限；读取期间保持访问
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { url.stopAccessingSecurityScopedResource() }
-        }
+        // Finder「打开方式」会带上 security-scoped 权限；保持到文稿关闭以便读写同目录媒体
+        retainSecurityScope(for: url)
         do {
             let data = try Data(contentsOf: url)
             let text = String(decoding: data, as: UTF8.self)
@@ -143,6 +293,7 @@ final class DocumentModel: ObservableObject {
             replaceContent(text, markingClean: true)
             return true
         } catch {
+            releaseSecurityScope()
             presentError(error, title: "无法打开文件")
             return false
         }
@@ -182,10 +333,7 @@ final class DocumentModel: ObservableObject {
     }
 
     private func write(to url: URL, updatingKind: Bool) -> Bool {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { url.stopAccessingSecurityScopedResource() }
-        }
+        retainSecurityScope(for: url)
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
             fileURL = url
@@ -198,6 +346,20 @@ final class DocumentModel: ObservableObject {
             presentError(error, title: "无法保存文件")
             return false
         }
+    }
+
+    /// 插入媒体前若尚未落盘，先引导存储。
+    @discardableResult
+    func ensureSavedForMediaInsert() -> Bool {
+        if fileURL != nil { return true }
+        let alert = NSAlert()
+        alert.messageText = "需要先保存文稿"
+        alert.informativeText = "图片等媒体会存到「文稿名media」文件夹。请先指定保存位置与文件名。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "存储…")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        return saveAs()
     }
 
     private func presentError(_ error: Error, title: String) {
