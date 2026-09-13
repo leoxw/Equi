@@ -13,7 +13,10 @@ import { installPreviewZoom } from './ui/preview-zoom.js';
 import { createPaneVisibility } from './ui/pane-visibility.js';
 import { notifyReady, logToSwift, notifyLoadError } from './bridge.js';
 import { installImageInsert, buildMarkdownImage, completeImportMedia as resolveImportMedia } from './media/image-insert.js';
-import { setDocumentContext as applyDocumentContext } from './media/document-context.js';
+import {
+  setDocumentContext as applyDocumentContext,
+  getDocumentContext,
+} from './media/document-context.js';
 
 function boot() {
   const sourceHost = document.getElementById('source-editor');
@@ -264,10 +267,17 @@ function boot() {
       }
       return !!ok;
     },
-    /** 原生下发文稿目录，用于解析相对媒体路径 */
+    /**
+     * 原生下发文稿目录，用于解析相对媒体路径。
+     * 注意：仅在目录真正变化时重灌 Markdown；否则每次按键触发的
+     * setDocumentContext 会把 TipTap 空段落冲掉，表现为「回车后回车消失」。
+     */
     setDocumentContext(payload = {}) {
+      const prev = getDocumentContext();
       applyDocumentContext(payload);
-      // 已有内容时按新基路径重解析预览
+      const next = getDocumentContext();
+      const dirChanged = (prev.directoryURL || '') !== (next.directoryURL || '');
+      if (!dirChanged) return true;
       try {
         const md = sync.getMarkdown();
         if (md) sync.setMarkdownFromNative({ markdown: md, markClean: !sync.isDirty?.() });

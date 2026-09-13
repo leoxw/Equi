@@ -13,6 +13,8 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
     private var webView: WKWebView!
     private var lastPushedRevision: UInt64 = 0
     private var lastPushedMode: String?
+    /// 避免文稿内容变更时反复 pushDocumentContext（会冲掉 TipTap 空段落）。
+    private var lastPushedDocumentContextKey: String = ""
     private var editorDidLoad = false
     private var cancellables = Set<AnyCancellable>()
     private var lastTicket: UInt64 = 0
@@ -376,6 +378,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 self.document.markEditorReady()
                 self.lastPushedRevision = 0
                 self.lastPushedMode = nil
+                self.lastPushedDocumentContextKey = ""
                 // Finder「打开方式」可能稍晚入队：有待打开文件或已有路径时不要盖欢迎页
                 let shouldWelcome =
                     self.document.content.isEmpty
@@ -565,7 +568,8 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         }
     }
 
-    /// 把文稿目录告知 Web，便于把相对媒体路径解析成可显示的 file URL。
+    /// 把文稿目录告知 Web，便于把相对媒体路径解析成可显示的 URL。
+    /// 仅在目录/文件名变化时下发，避免每次按键冲掉渲染窗空段落。
     private func pushDocumentContextToEditor() {
         var payload: [String: Any] = [:]
         if let dir = document.documentDirectoryURLString {
@@ -577,6 +581,13 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         if let fileURL = document.fileURL {
             payload["fileName"] = fileURL.lastPathComponent
         }
+        let key = [
+            payload["directoryURL"] as? String ?? "",
+            payload["mediaFolderName"] as? String ?? "",
+            payload["fileName"] as? String ?? "",
+        ].joined(separator: "\u{1f}")
+        guard key != lastPushedDocumentContextKey else { return }
+        lastPushedDocumentContextKey = key
         evaluateCall("window.EditorAPI && window.EditorAPI.setDocumentContext", payload: payload)
     }
 
