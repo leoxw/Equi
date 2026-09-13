@@ -218,7 +218,107 @@ function pushToEditor(session) {
   if (!session || session.win.isDestroyed()) return;
   pushEditingMode(session);
   pushNativeContent(session);
+  pushDocumentContext(session);
 }
+
+function pushDocumentContext(session) {
+  if (!session?.editorReady) return;
+  const payload = {};
+  if (session.doc.documentDirectoryURL) {
+    payload.directoryURL = session.doc.documentDirectoryURL;
+  }
+  if (session.doc.mediaFolderName) {
+    payload.mediaFolderName = session.doc.mediaFolderName;
+  }
+  if (session.doc.filePath) {
+    payload.fileName = path.basename(session.doc.filePath);
+  }
+  evalInEditor(
+    session,
+    `window.EditorAPI && window.EditorAPI.setDocumentContext(${JSON.stringify(payload)})`
+  );
+}
+
+async function ensureSavedForMedia(session) {
+  if (session.doc.filePath) return true;
+  const { response } = await dialog.showMessageBox(session.win, {
+    type: 'info',
+    buttons: ['存储…', '取消'],
+    defaultId: 0,
+    cancelId: 1,
+    title: '需要先保存文稿',
+    message: '需要先保存文稿',
+    detail: '图片等媒体会存到「文稿名media」文件夹。请先指定保存位置与文件名。',
+  });
+  if (response !== 0) return false;
+  return saveAsDocument(session);
+}
+
+async function handleImportMedia(session, body) {
+  const requestId = body?.requestId || '';
+  const reply = (payload) => {
+    const full = { ...payload, requestId };
+    evalInEditor(
+      session,
+      `window.EditorAPI && window.EditorAPI.completeImportMedia(${JSON.stringify(full)})`
+    );
+  };
+  try {
+    if (!(await ensureSavedForMedia(session))) {
+      reply({ ok: false, error: '已取消保存，无法插入媒体' });
+      return;
+    }
+    const fileName = (body?.fileName && String(body.fileName)) || 'image.png';
+    let base64 = body?.base64 || '';
+    if (!base64) {
+      reply({ ok: false, error: '媒体数据为空' });
+      return;
+    }
+    base64 = String(base64).replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length) {
+      reply({ ok: false, error: '媒体数据解码失败' });
+      return;
+    }
+    const relative = session.doc.importMediaData(buffer, fileName);
+    pushDocumentContext(session);
+    const displaySrc = session.doc.absoluteMediaURL(relative) || relative;
+    reply({
+      ok: true,
+      relativePath: relative,
+      displaySrc,
+      alt: path.basename(fileName, path.extname(fileName)),
+    });
+  } catch (err) {
+    reply({ ok: false, error: String(err.message || err) });
+  }
+}
+
+async function createNewDocument(parentWin) {
+  const { canceled, filePath } = await dialog.showSaveDialog(parentWin || undefined, {
+    title: '新建文稿',
+    message: '选择新建文稿的保存位置与文件名',
+    buttonLabel: '创建',
+    defaultPath: '未命名.md',
+    filters: [
+      { name: 'Markdown', extensions: ['md', 'markdown'] },
+      { name: '纯文本', extensions: ['txt'] },
+      { name: '所有文件', extensions: ['*'] },
+    ],
+  });
+  if (canceled || !filePath) return null;
+  let target = filePath;
+  if (!path.extname(target)) target = `${target}.md`;
+  try {
+    fs.writeFileSync(target, '', 'utf8');
+  } catch (err) {
+    dialog.showErrorBox('无法创建文稿', String(err.message || err));
+    return null;
+  }
+  return target;
+}
+
+
 
 function handleBridge(session, body) {
   const type = body?.type || '';
@@ -261,6 +361,10 @@ function handleBridge(session, body) {
     case 'loadError': {
       session.doc.markEditorFailed(body.message || '编辑器启动失败');
       broadcastSession(session);
+      break;
+    }
+    case 'importMedia': {
+      handleImportMedia(session, body);
       break;
     }
     default:
@@ -446,7 +550,10 @@ function buildMenu() {
     {
       label: '文件',
       submenu: [
-        { label: '新建', accelerator: 'CmdOrCtrl+N', click: () => createWindow() },
+        { label: '新建', accelerator: 'CmdOrCtrl+N', click: async () => {
+          const target = await createNewDocument(focusedSession()?.win);
+          if (target) openPathInApp(target);
+        } },
         {
           label: '打开…',
           accelerator: 'CmdOrCtrl+O',
@@ -578,7 +685,10 @@ function buildMenu() {
         {
           label: '新建窗口',
           accelerator: 'CmdOrCtrl+Shift+N',
-          click: () => createWindow(),
+          click: async () => {
+            const target = await createNewDocument();
+            if (target) openPathInApp(target);
+          },
         },
       ],
     },
@@ -600,9 +710,11 @@ function registerIpc() {
     const s = sessionFromEvent(event);
     return s ? saveAsDocument(s) : false;
   });
-  ipcMain.handle('app:newWindow', () => {
-    createWindow();
-    return true;
+  ipcMain.handle('app:newWindow', async (event) => {
+    const s = sessionFromEvent(event);
+    const target = await createNewDocument(s?.win);
+    if (target) openPathInApp(target);
+    return !!target;
   });
   ipcMain.on('editor:command', (event, command) => {
     const s = sessionFromEvent(event);

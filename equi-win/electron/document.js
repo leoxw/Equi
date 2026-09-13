@@ -122,6 +122,75 @@ class DocumentModel {
     this.isDirty = false;
   }
 
+  /** 文稿 `Notes.md` → 文件夹名 `Notesmedia`（仅插入媒体时创建）。 */
+  get mediaFolderName() {
+    if (!this.filePath) return null;
+    return path.basename(this.filePath, path.extname(this.filePath)) + 'media';
+  }
+
+  get mediaFolderPath() {
+    if (!this.filePath || !this.mediaFolderName) return null;
+    return path.join(path.dirname(this.filePath), this.mediaFolderName);
+  }
+
+  /** file URL（尾部带 /），供 Web 解析相对媒体路径。 */
+  get documentDirectoryURL() {
+    if (!this.filePath) return null;
+    const dir = path.dirname(this.filePath);
+    let href = require('url').pathToFileURL(dir).href;
+    if (!href.endsWith('/')) href += '/';
+    return href;
+  }
+
+  ensureMediaFolder() {
+    const folder = this.mediaFolderPath;
+    if (!folder) {
+      const err = new Error('请先保存文稿，再插入图片或媒体文件。');
+      err.code = 'EQUI_NEED_SAVE';
+      throw err;
+    }
+    if (!fs.existsSync(folder)) {
+      fs.mkdirSync(folder, { recursive: true });
+    }
+    return folder;
+  }
+
+  uniqueMediaFileName(original, folder) {
+    const trimmed = String(original || '').trim() || 'image.png';
+    let candidate = trimmed;
+    const ext = path.extname(trimmed);
+    const stem = path.basename(trimmed, ext);
+    let index = 1;
+    while (fs.existsSync(path.join(folder, candidate))) {
+      candidate = ext ? `${stem}-${index}${ext}` : `${stem}-${index}`;
+      index += 1;
+    }
+    return candidate;
+  }
+
+  /** 写入媒体目录，返回 Markdown 相对路径（如 Notesmedia/a.png）。 */
+  importMediaData(buffer, preferredName) {
+    const folder = this.ensureMediaFolder();
+    const destName = this.uniqueMediaFileName(preferredName, folder);
+    const dest = path.join(folder, destName);
+    fs.writeFileSync(dest, buffer);
+    return `${this.mediaFolderName}/${destName}`;
+  }
+
+  importMediaFile(sourcePath) {
+    const folder = this.ensureMediaFolder();
+    const destName = this.uniqueMediaFileName(path.basename(sourcePath), folder);
+    const dest = path.join(folder, destName);
+    fs.copyFileSync(sourcePath, dest);
+    return `${this.mediaFolderName}/${destName}`;
+  }
+
+  absoluteMediaURL(relativePath) {
+    if (!this.filePath) return null;
+    const abs = path.join(path.dirname(this.filePath), relativePath);
+    return require('url').pathToFileURL(abs).href;
+  }
+
   snapshot() {
     return {
       content: this.content,

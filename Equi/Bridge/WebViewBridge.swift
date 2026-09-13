@@ -19,10 +19,13 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
     private var readyWatchdog: DispatchWorkItem?
     private var didStartLoad = false
     private var sawHTMLExec = false
+    /// 自定义协议：沙盒下 WKWebView 不能直接读用户目录的 file:// 图片。
+    private let mediaSchemeHandler = EquiMediaSchemeHandler()
 
     init(document: DocumentModel, commands: EditorCommandBus) {
         self.document = document
         self.commands = commands
+        self.mediaSchemeHandler.document = document
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -46,6 +49,8 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         config.preferences.isElementFullscreenEnabled = false
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        // 必须在创建 WKWebView 之前注册
+        config.setURLSchemeHandler(mediaSchemeHandler, forURLScheme: EquiMediaSchemeHandler.scheme)
 
         let userContent = config.userContentController
         userContent.add(self, name: Self.bridgeName)
@@ -113,10 +118,12 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         let commandsChanged = self.commands !== commands
         self.document = document
         self.commands = commands
+        mediaSchemeHandler.document = document
         if documentChanged || commandsChanged || cancellables.isEmpty {
             bindSubscriptions()
         }
         pushEditingModeIfNeeded()
+        pushDocumentContextToEditor()
         pushNativeContentIfNeeded()
     }
 
@@ -146,6 +153,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             .sink { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.pushEditingModeIfNeeded()
+                    self?.pushDocumentContextToEditor()
                     self?.pushNativeContentIfNeeded()
                 }
             }
@@ -337,6 +345,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             "markClean": !document.isDirty
         ]
         evaluateCall("window.EditorAPI && window.EditorAPI.setMarkdown", payload: payload)
+        pushDocumentContextToEditor()
     }
 
     private func evaluate(_ js: String) {
@@ -384,6 +393,7 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                     self.document.replaceContent(welcome, markingClean: true)
                 }
                 self.pushEditingModeIfNeeded()
+                self.pushDocumentContextToEditor()
                 self.pushNativeContentIfNeeded()
 
             case "contentChange", "contentChanged":
@@ -409,8 +419,55 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 self.readyWatchdog?.cancel()
                 self.document.markEditorFailed(msg)
 
+            case "importMedia":
+                self.handleImportMediaRequest(body)
+
             default: break
             }
+        }
+    }
+
+    private func handleImportMediaRequest(_ body: [String: Any]) {
+        let requestId = body["requestId"] as? String ?? ""
+        func reply(_ payload: [String: Any]) {
+            var full = payload
+            full["requestId"] = requestId
+            evaluateCall("window.EditorAPI && window.EditorAPI.completeImportMedia", payload: full)
+        }
+
+        guard document.ensureSavedForMediaInsert() else {
+            reply(["ok": false, "error": "已取消保存，无法插入媒体"])
+            return
+        }
+
+        let fileName = (body["fileName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "image.png"
+        guard let base64 = body["base64"] as? String, !base64.isEmpty else {
+            reply(["ok": false, "error": "媒体数据为空"])
+            return
+        }
+        // 允许 data URL 前缀
+        let raw = base64.replacingOccurrences(
+            of: "^data:[^;]+;base64,",
+            with: "",
+            options: .regularExpression
+        )
+        guard let data = Data(base64Encoded: raw) else {
+            reply(["ok": false, "error": "媒体数据解码失败"])
+            return
+        }
+
+        do {
+            let relative = try document.importMediaData(data, preferredName: fileName)
+            pushDocumentContextToEditor()
+            let displaySrc = document.absoluteMediaURLString(forRelativePath: relative) ?? relative
+            reply([
+                "ok": true,
+                "relativePath": relative,
+                "displaySrc": displaySrc,
+                "alt": (fileName as NSString).deletingPathExtension,
+            ])
+        } catch {
+            reply(["ok": false, "error": error.localizedDescription])
         }
     }
 
@@ -483,38 +540,44 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
 
     private func insertDroppedImages(_ urls: [URL]) {
         for url in urls where Self.isImageFileURL(url) {
-            insertOneDroppedImage(url)
+            insertOneDroppedMedia(url)
         }
     }
 
-    private func insertOneDroppedImage(_ url: URL) {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { url.stopAccessingSecurityScopedResource() }
-        }
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-            #if DEBUG
-            print("[WebViewBridge] cannot read dropped image", url.path)
-            #endif
-            return
-        }
-        // 过大图片不走 evaluateJavaScript（有长度限制）；提示用户改用更小图
-        if data.count > 2_500_000 {
+    private func insertOneDroppedMedia(_ url: URL) {
+        guard document.ensureSavedForMediaInsert() else { return }
+        do {
+            let relative = try document.importMediaFile(from: url)
+            let alt = url.deletingPathExtension().lastPathComponent
+            pushDocumentContextToEditor()
+            let displaySrc = document.absoluteMediaURLString(forRelativePath: relative) ?? relative
+            evaluateCall("window.EditorAPI && window.EditorAPI.insertImage", payload: [
+                "src": displaySrc,
+                "markdownSrc": relative,
+                "alt": alt,
+            ])
+        } catch {
             let alert = NSAlert()
-            alert.messageText = "图片过大"
-            alert.informativeText = "拖入图片超过约 2.5MB，请压缩后再试，或先将图片拷贝到文稿同目录后用相对路径引用。"
+            alert.messageText = "无法插入媒体"
+            alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()
-            return
         }
-        let mime = Self.mimeType(forImageURL: url)
-        let b64 = data.base64EncodedString()
-        let src = "data:\(mime);base64,\(b64)"
-        let alt = url.deletingPathExtension().lastPathComponent
-        evaluateCall("window.EditorAPI && window.EditorAPI.insertImage", payload: [
-            "src": src,
-            "alt": alt,
-        ])
+    }
+
+    /// 把文稿目录告知 Web，便于把相对媒体路径解析成可显示的 file URL。
+    private func pushDocumentContextToEditor() {
+        var payload: [String: Any] = [:]
+        if let dir = document.documentDirectoryURLString {
+            payload["directoryURL"] = dir
+        }
+        if let name = document.mediaFolderName {
+            payload["mediaFolderName"] = name
+        }
+        if let fileURL = document.fileURL {
+            payload["fileName"] = fileURL.lastPathComponent
+        }
+        evaluateCall("window.EditorAPI && window.EditorAPI.setDocumentContext", payload: payload)
     }
 
     private static let imageExtensions: Set<String> = [

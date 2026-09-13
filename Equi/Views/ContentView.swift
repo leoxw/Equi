@@ -8,7 +8,11 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorToolbar(openNewWindow: { openWindow(id: "document") })
+            EditorToolbar(openNewWindow: {
+                guard let url = DocumentModel.promptCreateNewFile() else { return }
+                OpenFileRouter.shared.enqueue([url])
+                openWindow(id: "document")
+            })
             Divider()
             editorStatusBanner
             editorPane
@@ -129,7 +133,7 @@ struct EditorToolbar: View {
             Button(action: openNewWindow) {
                 Label("新建", systemImage: "doc.badge.plus")
             }
-            .help("新建窗口 (⌘N)")
+            .help("新建文稿并指定保存位置 (⌘N)")
 
             Button { document.openDocument() } label: {
                 Label("打开", systemImage: "folder")

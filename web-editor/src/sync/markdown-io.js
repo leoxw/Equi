@@ -10,6 +10,10 @@
 import { marked } from 'marked';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
+import {
+  expandMediaSrcInHtml,
+  relativizeMediaSrcForMarkdown,
+} from '../media/document-context.js';
 
 marked.setOptions({
   gfm: true,
@@ -698,7 +702,9 @@ export function markdownToHtml(markdown) {
   // 先处理制表符表，再提升缩进管道表，最后交给 marked
   const withTabTables = convertTabSeparatedTables(src);
   const normalized = convertIndentedPipeTables(withTabTables);
-  return encodeParagraphLeadingSpaces(marked.parse(normalized));
+  const html = encodeParagraphLeadingSpaces(marked.parse(normalized));
+  // 相对媒体路径展开为 file://，否则 WKWebView 无法显示
+  return expandMediaSrcInHtml(html);
 }
 
 /** TipTap/ProseMirror HTML → Markdown 字符串 */
@@ -713,8 +719,21 @@ export function htmlToMarkdown(html) {
   // 兜底：若仍残留 <table>，再强制转换
   md = convertHtmlTablesToGfm(md);
   md = tidyGfmPipeTables(md);
+  // 把预览用的绝对 file:// 收成相对路径再写入源码
+  md = relativizeMediaPathsInMarkdown(md);
   return md + (html.endsWith('\n') ? '' : '\n');
 }
+
+function relativizeMediaPathsInMarkdown(markdown) {
+  return String(markdown ?? '').replace(
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)/g,
+    (full, alt, src) => {
+      const rel = relativizeMediaSrcForMarkdown(src);
+      return `![${alt}](${rel})`;
+    },
+  );
+}
+
 
 /** 压缩 GFM 管道表单元格内外多余空白/空行（保留行首大纲缩进） */
 function tidyGfmPipeTables(markdown) {
