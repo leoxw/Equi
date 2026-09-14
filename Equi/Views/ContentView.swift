@@ -126,6 +126,7 @@ struct ContentView: View {
 struct EditorToolbar: View {
     @EnvironmentObject private var document: DocumentModel
     @EnvironmentObject private var commands: EditorCommandBus
+    @Environment(\.openWindow) private var openWindow
     var openNewWindow: () -> Void
 
     var body: some View {
@@ -135,10 +136,18 @@ struct EditorToolbar: View {
             }
             .help("新建文稿并指定保存位置 (⌘N)")
 
-            Button { document.openDocument() } label: {
+            Button {
+                guard let url = DocumentModel.promptOpenFile() else { return }
+                if document.isDirty {
+                    OpenFileRouter.shared.enqueue([url])
+                    openWindow(id: "document")
+                } else {
+                    _ = document.load(from: url)
+                }
+            } label: {
                 Label("打开", systemImage: "folder")
             }
-            .help("在当前窗口打开 (⌘O)")
+            .help("打开文件；若当前文稿未保存则新标签打开 (⌘O)")
 
             Button { _ = document.save() } label: {
                 Label("存储", systemImage: "square.and.arrow.down")

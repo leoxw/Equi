@@ -251,8 +251,8 @@ final class DocumentModel: ObservableObject {
         replaceContent("", markingClean: true)
     }
 
-    @discardableResult
-    func openDocument() -> Bool {
+    /// 弹出打开面板，仅返回所选 URL（不载入），供「有未保存修改时新标签打开」路由使用。
+    static func promptOpenFile() -> URL? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.markdown, .plainText, .text, .json, .xml, .sourceCode, .data]
         panel.allowsMultipleSelection = false
@@ -262,9 +262,13 @@ final class DocumentModel: ObservableObject {
         // 允许 .swift / .toml 等未在 UTType 列表中的扩展名
         panel.allowsOtherFileTypes = true
 
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return false
-        }
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    @discardableResult
+    func openDocument() -> Bool {
+        guard let url = Self.promptOpenFile() else { return false }
         return load(from: url)
     }
 
