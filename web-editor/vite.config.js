@@ -79,7 +79,7 @@ ${css}
 <body>
 <div data-equi-probe="1" style="position:fixed;z-index:99999;right:8px;bottom:8px;padding:4px 8px;border-radius:6px;font:11px -apple-system;background:#0a7a5c;color:#fff;opacity:.85;pointer-events:none">MarkDuo WebView OK</div>
 <div id="app" class="app">
-  <aside class="pane pane-outline" id="pane-outline" aria-label="目录导航">
+  <aside class="pane pane-outline" id="pane-outline" aria-label="文件列表">
     <div id="outline-nav" class="outline-nav-host"></div>
   </aside>
   <div class="pane pane-source" id="pane-source">
