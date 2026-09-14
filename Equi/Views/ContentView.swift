@@ -192,9 +192,9 @@ struct EditorToolbar: View {
                 .help("放大预览")
 
                 Button { commands.toggleOutline() } label: {
-                    Label("目录", systemImage: "list.bullet.rectangle")
+                    Label("文件", systemImage: "folder")
                 }
-                .help("显示/隐藏目录")
+                .help("显示/隐藏文件列表")
 
                 Button { commands.toggleSourcePane() } label: {
                     Label("纯文本", systemImage: "text.alignleft")

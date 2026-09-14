@@ -367,8 +367,66 @@ function handleBridge(session, body) {
       handleImportMedia(session, body);
       break;
     }
+    case 'listDirectory': {
+      handleListDirectory(session, body);
+      break;
+    }
+    case 'openPath': {
+      handleOpenPath(session, body);
+      break;
+    }
     default:
       break;
+  }
+}
+
+function handleListDirectory(session, body) {
+  const requestId = body?.requestId || '';
+  const reply = (payload) => {
+    const full = { ...payload, requestId };
+    evalInEditor(
+      session,
+      `window.EditorAPI && window.EditorAPI.completeListDirectory(${JSON.stringify(full)})`
+    );
+  };
+  try {
+    const listing = session.doc.listDirectory(body?.path);
+    const payload = {
+      ok: true,
+      path: listing.path,
+      entries: listing.entries,
+    };
+    if (listing.parentPath) payload.parentPath = listing.parentPath;
+    if (listing.currentFileName) payload.currentFileName = listing.currentFileName;
+    reply(payload);
+  } catch (err) {
+    reply({ ok: false, error: String(err.message || err) });
+  }
+}
+
+function handleOpenPath(session, body) {
+  const filePath = body?.path;
+  if (!filePath) return;
+  try {
+    const st = fs.statSync(filePath);
+    if (st.isDirectory()) return;
+  } catch (_) {
+    dialog.showErrorBox('无法打开文件', '路径不存在或无法访问');
+    return;
+  }
+  // 有未保存修改：新窗口打开，避免覆盖编辑中内容
+  if (session.doc.isDirty) {
+    createWindow(filePath);
+    return;
+  }
+  try {
+    session.doc.loadFromPath(filePath);
+    session.lastPushedRevision = 0;
+    session.lastPushedMode = null;
+    pushToEditor(session);
+    broadcastSession(session);
+  } catch (err) {
+    dialog.showErrorBox('无法打开文件', String(err.message || err));
   }
 }
 
@@ -673,7 +731,7 @@ function buildMenu() {
           },
         },
         {
-          label: '显示/隐藏目录',
+          label: '显示/隐藏文件列表',
           click: () => {
             const s = focusedSession();
             if (s) runCommand(s, 'toggleOutline');

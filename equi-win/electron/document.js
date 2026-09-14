@@ -5,6 +5,24 @@ const fs = require('fs');
 
 const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mdwn', 'mkdn']);
 
+const OPENABLE_TEXT_EXTS = new Set([
+  'md', 'markdown', 'mdown', 'mkd', 'mdwn', 'mkdn',
+  'txt', 'text', 'log', 'csv',
+  'json', 'xml', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf',
+  'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs',
+  'css', 'scss', 'less', 'html', 'htm',
+  'swift', 'kt', 'java', 'go', 'rs', 'py', 'rb', 'php',
+  'c', 'cc', 'cpp', 'cxx', 'h', 'hpp', 'm', 'mm',
+  'sh', 'bash', 'zsh', 'fish', 'ps1',
+  'sql', 'r', 'lua', 'pl', 'pm',
+]);
+
+const EXCLUDED_BROWSER_EXTS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif',
+  'pdf', 'zip', 'dmg', 'pkg', 'app', 'exe', 'dll', 'so', 'dylib',
+  'mp3', 'mp4', 'mov', 'avi', 'wav', 'icns', 'ico',
+]);
+
 function kindMarkdown() {
   return { type: 'markdown', pathExtension: 'md', webMode: 'markdown', statusLabel: 'Markdown' };
 }
@@ -189,6 +207,82 @@ class DocumentModel {
     if (!this.filePath) return null;
     const abs = path.join(path.dirname(this.filePath), relativePath);
     return require('url').pathToFileURL(abs).href;
+  }
+
+  /** 编辑器可打开的文本扩展名（与 macOS DocumentModel 对齐）。 */
+  static get openableTextExtensions() {
+    return OPENABLE_TEXT_EXTS;
+  }
+
+  static get excludedBrowserExtensions() {
+    return EXCLUDED_BROWSER_EXTS;
+  }
+
+  get documentDirectoryPath() {
+    return this.filePath ? path.dirname(this.filePath) : null;
+  }
+
+  /**
+   * 列举目录：文件夹 + 可打开文本文件。`dirPath` 为空时用文稿目录。
+   * @returns {{ path: string, parentPath: string|null, currentFileName: string|null, entries: Array<{name:string,kind:string,path:string}> }}
+   */
+  listDirectory(dirPath) {
+    let target = dirPath && String(dirPath).trim() ? String(dirPath) : this.documentDirectoryPath;
+    if (!target) {
+      const err = new Error('请先打开或保存文稿');
+      err.code = 'EQUI_NEED_PATH';
+      throw err;
+    }
+    target = path.resolve(target);
+    let st;
+    try {
+      st = fs.statSync(target);
+    } catch (_) {
+      const err = new Error('目录不存在或无法访问');
+      err.code = 'EQUI_BAD_DIR';
+      throw err;
+    }
+    if (!st.isDirectory()) {
+      const err = new Error('目录不存在或无法访问');
+      err.code = 'EQUI_BAD_DIR';
+      throw err;
+    }
+
+    const names = fs.readdirSync(target, { withFileTypes: true });
+    const dirs = [];
+    const files = [];
+    for (const ent of names) {
+      const name = ent.name;
+      if (!name || name.startsWith('.')) continue;
+      const full = path.join(target, name);
+      if (ent.isDirectory()) {
+        dirs.push({ name, kind: 'dir', path: full });
+        continue;
+      }
+      if (!ent.isFile()) continue;
+      const ext = path.extname(name).replace(/^\./, '').toLowerCase();
+      if (EXCLUDED_BROWSER_EXTS.has(ext)) continue;
+      if (!ext || OPENABLE_TEXT_EXTS.has(ext)) {
+        files.push({ name, kind: 'file', path: full });
+      }
+    }
+
+    const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+    dirs.sort((a, b) => collator.compare(a.name, b.name));
+    files.sort((a, b) => collator.compare(a.name, b.name));
+
+    const parent = path.dirname(target);
+    let parentPath = null;
+    if (parent && parent !== target) {
+      parentPath = parent;
+    }
+
+    return {
+      path: target,
+      parentPath,
+      currentFileName: this.filePath ? path.basename(this.filePath) : null,
+      entries: dirs.concat(files),
+    };
   }
 
   snapshot() {

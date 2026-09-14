@@ -8,7 +8,7 @@ import { createWysiwygEditor } from './editors/wysiwyg-editor.js';
 import { createSyncEngine } from './sync/sync-engine.js';
 import { installSplitter } from './ui/splitter.js';
 import { installFormatContextMenu } from './ui/format-context-menu.js';
-import { installOutlineNav } from './ui/outline-nav.js';
+import { installFileBrowser, completeListDirectory as resolveListDirectory } from './ui/file-browser.js';
 import { installPreviewZoom } from './ui/preview-zoom.js';
 import { createPaneVisibility } from './ui/pane-visibility.js';
 import { notifyReady, logToSwift, notifyLoadError, hasNativeBridge } from './bridge.js';
@@ -21,6 +21,7 @@ import {
   setDocumentContext as applyDocumentContext,
   getDocumentContext,
 } from './media/document-context.js';
+
 
 function boot() {
   const sourceHost = document.getElementById('source-editor');
@@ -36,12 +37,11 @@ function boot() {
 
   /** 前向引用：sync 在 editors 之后创建 */
   const syncRef = { current: null };
-  let outline = null;
+  let fileBrowser = null;
 
   const source = createSourceEditor(sourceHost, {
     onChange: (md) => {
       syncRef.current?.onSourceChange(md);
-      outline?.refresh();
     },
     onFocus: () => syncRef.current?.setFocus('source'),
     onBlur: () => {
@@ -57,7 +57,6 @@ function boot() {
   const wysiwyg = createWysiwygEditor(wysiwygHost, {
     onChange: (getHtml) => {
       syncRef.current?.onWysiwygChange(getHtml);
-      outline?.refresh();
     },
     onFocus: () => syncRef.current?.setFocus('wysiwyg'),
     onBlur: () => {
@@ -69,7 +68,6 @@ function boot() {
     },
     onScroll: (ratio) => {
       syncRef.current?.onWysiwygScroll(ratio);
-      outline?.syncActiveFromScroll(wysiwygHost);
     },
   });
 
@@ -90,19 +88,7 @@ function boot() {
   formatMenu.attachSource(sourceHost);
 
   if (outlineHost) {
-    outline = installOutlineNav({
-      root: outlineHost,
-      getEditor: () => wysiwyg.editor,
-      onNavigate: (item) => {
-        sync.setFocus('wysiwyg');
-        // 同步左侧源码跳到对应标题，便于对照编辑
-        try {
-          source.revealHeading?.({ level: item.level, text: item.text });
-        } catch {
-          // ignore
-        }
-      },
-    });
+    fileBrowser = installFileBrowser({ root: outlineHost });
   }
 
   const zoom = installPreviewZoom({
@@ -117,21 +103,6 @@ function boot() {
   panes.bind();
 
   // TipTap 事务后刷新目录（覆盖程序化 setContent）
-  wysiwyg.editor.on('update', () => outline?.refresh());
-  wysiwyg.editor.on('selectionUpdate', () => {
-    try {
-      const { $from } = wysiwyg.editor.state.selection;
-      for (let d = $from.depth; d > 0; d -= 1) {
-        const node = $from.node(d);
-        if (node.type.name === 'heading') {
-          outline?.refresh();
-          break;
-        }
-      }
-    } catch {
-      // ignore
-    }
-  });
 
   window.EditorAPI = {
     setMarkdown(payload) {
@@ -140,7 +111,6 @@ function boot() {
       } else {
         sync.setMarkdownFromNative(payload ?? {});
       }
-      outline?.refresh();
     },
     getMarkdown() {
       return sync.getMarkdown();
@@ -191,8 +161,7 @@ function boot() {
         sync.setFocus('source');
         source.focus();
       } else {
-        outline?.refresh();
-      }
+        }
       requestAnimationFrame(() => {
         try {
           source.view.requestMeasure?.();
@@ -229,8 +198,8 @@ function boot() {
         typeof force === 'boolean'
           ? force
           : !document.body.classList.contains('outline-collapsed');
-      if (outline?.setCollapsed) {
-        outline.setCollapsed(next);
+      if (fileBrowser?.setCollapsed) {
+        fileBrowser.setCollapsed(next);
       } else {
         document.body.classList.toggle('outline-collapsed', next);
         window.dispatchEvent(new Event('resize'));
@@ -259,7 +228,7 @@ function boot() {
       const truth = sync.getSourceOfTruth();
       if (truth === 'wysiwyg' || (truth === 'none' && wysiwyg.editor?.isFocused)) {
         const ok = wysiwyg.insertImage({ src: src || markdownSrc, alt });
-        if (ok) outline?.refresh();
+        if (ok) fileBrowser?.refresh();
         return !!ok;
       }
       const md = buildMarkdownImage({ src: markdownSrc || src, alt });
@@ -267,8 +236,7 @@ function boot() {
       const ok = source.insertAtCursor(snippet);
       if (ok) {
         sync.onSourceChange(source.getMarkdown(), { immediate: true });
-        outline?.refresh();
-      }
+        }
       return !!ok;
     },
     /**
@@ -281,12 +249,19 @@ function boot() {
       applyDocumentContext(payload);
       const next = getDocumentContext();
       const dirChanged = (prev.directoryURL || '') !== (next.directoryURL || '');
-      if (!dirChanged) return true;
-      try {
-        const md = sync.getMarkdown();
-        if (md) sync.setMarkdownFromNative({ markdown: md, markClean: !sync.isDirty?.() });
-      } catch (_) {
-        /* ignore */
+      const fileChanged = (prev.fileName || '') !== (next.fileName || '');
+      if (dirChanged) {
+        try {
+          const md = sync.getMarkdown();
+          if (md) sync.setMarkdownFromNative({ markdown: md, markClean: !sync.isDirty?.() });
+        } catch (_) {
+          /* ignore */
+        }
+        fileBrowser?.onDocumentContextChanged();
+      } else if (fileChanged) {
+        fileBrowser?.refresh();
+      } else {
+        fileBrowser?.refresh();
       }
       return true;
     },
@@ -295,15 +270,20 @@ function boot() {
       resolveImportMedia(payload);
       return true;
     },
+    /** 原生列举目录完成回调 */
+    completeListDirectory(payload = {}) {
+      resolveListDirectory(payload);
+      return true;
+    },
   };
 
   const welcome = `# MarkDuo
 
 左侧编辑 **原始 Markdown**，右侧预览排版对齐 Cursor 打开 Markdown 的阅读样式。
 
-## 目录与缩放
+## 文件与缩放
 
-- 最左侧为标题目录，点击可跳转
+- 最左侧为同目录文件列表，可进入文件夹或打开文件
 - 右上角 \`-\` / \`%\` / \`+\` 可缩放预览字号
 
 ## 同步规则
@@ -326,7 +306,7 @@ console.log('离线 Bundle，无外网依赖');
     insertImage: (payload) => window.EditorAPI.insertImage(payload),
   });
 
-  outline?.refresh();
+  fileBrowser?.refresh();
   notifyReady();
   logToSwift('Editor kernel booted');
   source.focus();

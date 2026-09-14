@@ -425,9 +425,61 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             case "importMedia":
                 self.handleImportMediaRequest(body)
 
+            case "listDirectory":
+                self.handleListDirectoryRequest(body)
+
+            case "openPath":
+                self.handleOpenPathRequest(body)
+
             default: break
             }
         }
+    }
+
+    private func handleListDirectoryRequest(_ body: [String: Any]) {
+        let requestId = body["requestId"] as? String ?? ""
+        func reply(_ payload: [String: Any]) {
+            var full = payload
+            full["requestId"] = requestId
+            evaluateCall("window.EditorAPI && window.EditorAPI.completeListDirectory", payload: full)
+        }
+        do {
+            let listing = try document.listDirectory(at: body["path"] as? String)
+            var payload: [String: Any] = [
+                "ok": true,
+                "path": listing.path,
+                "entries": listing.entries,
+            ]
+            if let parent = listing.parentPath {
+                payload["parentPath"] = parent
+            }
+            if let name = listing.currentFileName {
+                payload["currentFileName"] = name
+            }
+            reply(payload)
+        } catch {
+            reply(["ok": false, "error": error.localizedDescription])
+        }
+    }
+
+    private func handleOpenPathRequest(_ body: [String: Any]) {
+        guard let path = body["path"] as? String, !path.isEmpty else { return }
+        let url = URL(fileURLWithPath: path)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue {
+            // 文件夹应由 Web 侧 listDirectory 导航；此处忽略
+            return
+        }
+        // 有未保存修改：新标签/新窗打开，避免覆盖编辑中内容
+        if document.isDirty {
+            OpenFileRouter.shared.enqueue([url])
+            return
+        }
+        _ = document.load(from: url)
+        // load 会递增 nativeRevision；强制刷新上下文键以便文件列表高亮当前文件
+        lastPushedDocumentContextKey = ""
+        pushDocumentContextToEditor()
+        pushNativeContentIfNeeded()
     }
 
     private func handleImportMediaRequest(_ body: [String: Any]) {

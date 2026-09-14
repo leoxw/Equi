@@ -117,6 +117,101 @@ final class DocumentModel: ObservableObject {
         return dir.absoluteString
     }
 
+    /// 文稿所在目录路径。
+    var documentDirectoryPath: String? {
+        fileURL?.deletingLastPathComponent().path
+    }
+
+    /// 编辑器可打开的文本扩展名（与打开面板对齐）；图片等排除。
+    static let openableTextExtensions: Set<String> = [
+        "md", "markdown", "mdown", "mkd", "mdwn", "mkdn",
+        "txt", "text", "log", "csv",
+        "json", "xml", "yml", "yaml", "toml", "ini", "cfg", "conf",
+        "js", "jsx", "ts", "tsx", "mjs", "cjs",
+        "css", "scss", "less", "html", "htm",
+        "swift", "kt", "java", "go", "rs", "py", "rb", "php",
+        "c", "cc", "cpp", "cxx", "h", "hpp", "m", "mm",
+        "sh", "bash", "zsh", "fish", "ps1",
+        "sql", "r", "lua", "pl", "pm",
+    ]
+
+    private static let excludedBrowserExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif",
+        "pdf", "zip", "dmg", "pkg", "app", "exe", "dll", "so", "dylib",
+        "mp3", "mp4", "mov", "avi", "wav", "icns", "ico",
+    ]
+
+    struct DirectoryListing {
+        let path: String
+        let parentPath: String?
+        let currentFileName: String?
+        let entries: [[String: String]]
+    }
+
+    /// 列举目录：文件夹 + 可打开文本文件。`path` 为空时用文稿目录。
+    func listDirectory(at path: String?) throws -> DirectoryListing {
+        let dirPath: String
+        if let path, !path.isEmpty {
+            dirPath = path
+        } else if let documentDirectoryPath {
+            dirPath = documentDirectoryPath
+        } else {
+            throw NSError(domain: "Equi", code: 20, userInfo: [
+                NSLocalizedDescriptionKey: "请先打开或保存文稿",
+            ])
+        }
+
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDir), isDir.boolValue else {
+            throw NSError(domain: "Equi", code: 21, userInfo: [
+                NSLocalizedDescriptionKey: "目录不存在或无法访问",
+            ])
+        }
+
+        let dirURL = URL(fileURLWithPath: dirPath, isDirectory: true)
+        let contents = try FileManager.default.contentsOfDirectory(
+            at: dirURL,
+            includingPropertiesForKeys: [.isDirectoryKey, .isHiddenKey, .nameKey],
+            options: [.skipsPackageDescendants]
+        )
+
+        var dirs: [[String: String]] = []
+        var files: [[String: String]] = []
+        for url in contents {
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isHiddenKey])
+            if values.isHidden == true { continue }
+            let name = url.lastPathComponent
+            if name.hasPrefix(".") { continue }
+            if values.isDirectory == true {
+                dirs.append(["name": name, "kind": "dir", "path": url.path])
+                continue
+            }
+            let ext = url.pathExtension.lowercased()
+            if Self.excludedBrowserExtensions.contains(ext) { continue }
+            if ext.isEmpty || Self.openableTextExtensions.contains(ext) {
+                files.append(["name": name, "kind": "file", "path": url.path])
+            }
+        }
+
+        dirs.sort { ($0["name"] ?? "").localizedStandardCompare($1["name"] ?? "") == .orderedAscending }
+        files.sort { ($0["name"] ?? "").localizedStandardCompare($1["name"] ?? "") == .orderedAscending }
+
+        let parent = dirURL.deletingLastPathComponent()
+        let parentPath: String? = {
+            // 到根目录时 parent 与自身相同或空
+            if parent.path == dirURL.path || parent.path.isEmpty { return nil }
+            if parent.path == "/" { return "/" }
+            return parent.path
+        }()
+
+        return DirectoryListing(
+            path: dirURL.path,
+            parentPath: parentPath,
+            currentFileName: fileURL?.lastPathComponent,
+            entries: dirs + files
+        )
+    }
+
     private func retainSecurityScope(for url: URL) {
         releaseSecurityScope()
         securityScopedURL = url

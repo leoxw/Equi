@@ -247,9 +247,7 @@ body.outline-collapsed .pane-outline {
   background: var(--splitter-active);
 }
 
-/* 纯文本模式：隐藏目录、预览与分隔条，源码栏铺满 */
-body.mode-plain .pane-outline,
-body.mode-plain #pane-outline,
+/* 纯文本模式：保留左侧文件列表；隐藏预览与分隔条，源码栏铺满 */
 body.mode-plain .pane-wysiwyg,
 body.mode-plain #pane-wysiwyg,
 body.mode-plain .splitter,
@@ -1033,4 +1031,62 @@ body.is-resizing {
 
 .equi-ctx-swatch.is-active {
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+
+/* —— 文件浏览器（复用 outline 布局） —— */
+.file-browser-header {
+  gap: 4px;
+}
+.file-browser-up {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+.file-browser-up:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+.file-browser-up:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.file-browser-path {
+  padding: 0 8px 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.outline-collapsed .file-browser-path,
+body.outline-collapsed .file-browser-up {
+  display: none;
+}
+.file-browser-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  width: 100%;
+}
+.file-browser-icon {
+  flex: 0 0 12px;
+  width: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.file-browser-item.is-dir .file-browser-icon {
+  color: var(--text);
+}
+.file-browser-item.is-dir .outline-item-text {
+  font-weight: 500;
 }

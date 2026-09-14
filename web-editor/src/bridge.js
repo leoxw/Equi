@@ -79,3 +79,7 @@ export function logToSwift(message) {
 export function notifyLoadError(message) {
   postToSwift({ type: 'loadError', message: String(message) });
 }
+
+export function requestOpenPath(path) {
+  return postToSwift({ type: 'openPath', path });
+}
