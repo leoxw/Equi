@@ -13,15 +13,25 @@ struct WindowTitleBinder: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        // 等一拍，确保 SwiftUI 已把 view 挂到 window 上
+        // 能立刻绑上就立刻绑：多标签下靠 representedURL 判断「是否已打开」
+        if let window = nsView.window {
+            apply(to: window)
+            return
+        }
+        // 尚未挂到 window 时再等一拍
         DispatchQueue.main.async {
             guard let window = nsView.window else { return }
-            if window.title != title {
-                window.title = title
-            }
-            if window.representedURL != representedURL {
-                window.representedURL = representedURL
-            }
+            self.apply(to: window)
         }
+    }
+
+    private func apply(to window: NSWindow) {
+        if window.title != title {
+            window.title = title
+        }
+        if window.representedURL != representedURL {
+            window.representedURL = representedURL
+        }
+        DocumentWindowTabbing.apply(to: window)
     }
 }
