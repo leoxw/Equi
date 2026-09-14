@@ -470,19 +470,44 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             // 文件夹应由 Web 侧 listDirectory 导航；此处忽略
             return
         }
-        // 侧栏路径无 Open 面板 scope：先确保目录权限（书签或弹窗）
-        _ = FolderAccessStore.shared.ensureAccess(toFile: url, promptIfNeeded: true)
 
-        // 有未保存修改：新标签/新窗打开，避免覆盖编辑中内容
-        if document.isDirty {
-            OpenFileRouter.shared.enqueue([url])
-            return
+        // 必须异步：在 WKScriptMessageHandler 同步栈里 runModal / 重活会卡死 UI
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            if self.document.fileURL?.standardizedFileURL.path == url.standardizedFileURL.path {
+                return
+            }
+
+            let openNow = { [weak self] in
+                guard let self else { return }
+                if self.document.isDirty {
+                    OpenFileRouter.shared.enqueue([url])
+                    return
+                }
+                _ = self.document.load(from: url)
+                self.lastPushedDocumentContextKey = ""
+                self.pushDocumentContextToEditor()
+                self.pushNativeContentIfNeeded()
+            }
+
+            if FolderAccessStore.shared.hasAccess(toFile: url) {
+                openNow()
+                return
+            }
+
+            FolderAccessStore.shared.requestAccess(toFile: url) { granted in
+                if granted {
+                    openNow()
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "无法打开文件"
+                    alert.informativeText = "未获得该文件夹的访问权限。"
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
         }
-        _ = document.load(from: url)
-        // load 会递增 nativeRevision；强制刷新上下文键以便文件列表高亮当前文件
-        lastPushedDocumentContextKey = ""
-        pushDocumentContextToEditor()
-        pushNativeContentIfNeeded()
     }
 
     private func handleImportMediaRequest(_ body: [String: Any]) {

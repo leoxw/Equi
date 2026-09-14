@@ -169,8 +169,8 @@ final class DocumentModel: ObservableObject {
         }
 
         let dirURL = URL(fileURLWithPath: dirPath, isDirectory: true)
-        // 侧栏浏览依赖目录级权限；若仅有单文件 Open 权限，这里请求一次文件夹授权
-        _ = FolderAccessStore.shared.ensureAccess(toDirectory: dirURL, promptIfNeeded: true)
+        // 仅静默恢复书签，绝不在 bridge 回调里弹窗（否则会与 WebKit 死锁）
+        _ = FolderAccessStore.shared.hasAccess(toDirectory: dirURL)
 
         let contents = try FileManager.default.contentsOfDirectory(
             at: dirURL,
@@ -386,15 +386,10 @@ final class DocumentModel: ObservableObject {
             return false
         }
 
-        // 1) 已有目录书签 / 激活中的文件夹权限
-        // 2) 否则保留单文件 security scope（Open 面板 / Finder「打开方式」）
-        // 3) 仍读失败则弹窗请求文件夹授权后重试（侧栏用路径打开时常见）
+        // 已有目录书签则用之；否则保留单文件 security scope（Open 面板 / Finder）
+        // 需要弹窗授权时由调用方走 FolderAccessStore.requestAccess（异步），避免死锁
         let directory = url.deletingLastPathComponent()
-        let hasFolderAccess = FolderAccessStore.shared.ensureAccess(
-            toDirectory: directory,
-            promptIfNeeded: false
-        )
-        if hasFolderAccess {
+        if FolderAccessStore.shared.hasAccess(toDirectory: directory) {
             releaseSecurityScope()
         } else {
             retainSecurityScope(for: url)
@@ -405,20 +400,6 @@ final class DocumentModel: ObservableObject {
             try applyLoadedFile(at: url)
             return true
         } catch {
-            let granted = FolderAccessStore.shared.ensureAccess(
-                toFile: url,
-                promptIfNeeded: true
-            )
-            if granted {
-                releaseSecurityScope()
-                do {
-                    try applyLoadedFile(at: url)
-                    return true
-                } catch {
-                    presentError(error, title: "无法打开文件")
-                    return false
-                }
-            }
             releaseSecurityScope()
             presentError(error, title: "无法打开文件")
             return false
@@ -468,11 +449,7 @@ final class DocumentModel: ObservableObject {
 
     private func write(to url: URL, updatingKind: Bool) -> Bool {
         let directory = url.deletingLastPathComponent()
-        let hasFolderAccess = FolderAccessStore.shared.ensureAccess(
-            toDirectory: directory,
-            promptIfNeeded: false
-        )
-        if hasFolderAccess {
+        if FolderAccessStore.shared.hasAccess(toDirectory: directory) {
             releaseSecurityScope()
         } else {
             retainSecurityScope(for: url)
@@ -488,21 +465,6 @@ final class DocumentModel: ObservableObject {
             isDirty = false
             return true
         } catch {
-            // 保存失败时再请求一次目录权限（例如侧栏打开后首次写入）
-            if FolderAccessStore.shared.ensureAccess(toDirectory: directory, promptIfNeeded: true) {
-                do {
-                    try content.write(to: url, atomically: true, encoding: .utf8)
-                    fileURL = url
-                    if updatingKind {
-                        kind = DocumentKind.infer(from: url)
-                    }
-                    isDirty = false
-                    return true
-                } catch {
-                    presentError(error, title: "无法保存文件")
-                    return false
-                }
-            }
             presentError(error, title: "无法保存文件")
             return false
         }
