@@ -470,6 +470,9 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
             // 文件夹应由 Web 侧 listDirectory 导航；此处忽略
             return
         }
+        // 侧栏路径无 Open 面板 scope：先确保目录权限（书签或弹窗）
+        _ = FolderAccessStore.shared.ensureAccess(toFile: url, promptIfNeeded: true)
+
         // 有未保存修改：新标签/新窗打开，避免覆盖编辑中内容
         if document.isDirty {
             OpenFileRouter.shared.enqueue([url])
