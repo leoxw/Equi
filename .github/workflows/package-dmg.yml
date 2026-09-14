@@ -1,0 +1,49 @@
+name: Package MarkDuo DMG
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web-editor/package-lock.json
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build editor + app + DMG
+        run: |
+          chmod +x scripts/build-editor.sh scripts/package-dmg.sh
+          ./scripts/package-dmg.sh
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDuo-dmg
+          path: |
+            dist/*.dmg
+            dist/MarkDuo.app
+          if-no-files-found: error
+
+      - name: Attach DMG to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
