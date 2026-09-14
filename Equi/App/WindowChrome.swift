@@ -19,6 +19,10 @@ enum WindowChrome {
         // 半透明背景：内容延伸到标题栏下方
         window.backgroundColor = NSColor.windowBackgroundColor
 
+        // 新窗口优先并入系统标签页（用户「偏好标签页」开启时更明显）
+        window.tabbingMode = .preferred
+        window.tabbingIdentifier = "com.leoxw.MarkDuo.document"
+
         // 保持系统标准交通灯位置（不要自定义 trafficLightPosition，除非刻意偏移）
         // fullSizeContentView 下系统仍会将红黄绿放在左上角标准位置。
     }

@@ -58,9 +58,9 @@ struct DocumentWorkspaceView: View {
             }
     }
 
-    /// 空文档或仅欢迎页时可直接载入；已有关联文件 / 未保存编辑则开新窗。
+    /// 无未保存修改且尚无关联文件时可复用本窗；有未保存修改则开新标签/新窗。
     private var canReuseCurrentDocument: Bool {
-        document.fileURL == nil && !document.isDirty
+        !document.isDirty && document.fileURL == nil
     }
 
     private func consumePendingFileIfNeeded() {
@@ -94,10 +94,19 @@ struct EquiCommands: Commands {
             .keyboardShortcut("n", modifiers: .command)
 
             Button("打开…") {
-                document?.openDocument()
+                guard let url = DocumentModel.promptOpenFile() else { return }
+                // 当前文稿有未保存修改：新标签/新窗打开，避免冲掉编辑中内容
+                if document?.isDirty == true {
+                    OpenFileRouter.shared.enqueue([url])
+                    openWindow(id: "document")
+                } else if let document {
+                    _ = document.load(from: url)
+                } else {
+                    OpenFileRouter.shared.enqueue([url])
+                    openWindow(id: "document")
+                }
             }
             .keyboardShortcut("o", modifiers: .command)
-            .disabled(document == nil)
         }
 
         CommandGroup(replacing: .saveItem) {
