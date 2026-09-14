@@ -30,7 +30,10 @@ final class OpenFileRouter: ObservableObject {
         imageExtensions.contains(url.pathExtension.lowercased())
     }
 
-    func enqueue(_ urls: [URL]) {
+    /// 入队待打开文件。若文件已在某标签打开则直接跳转，不重复入队。
+    /// - Returns: 实际新入队的数量（0 表示全部已聚焦或被忽略）。
+    @discardableResult
+    func enqueue(_ urls: [URL]) -> Int {
         dispatchPrecondition(condition: .onQueue(.main))
         let now = Date()
         pruneRecent(now: now)
@@ -39,6 +42,10 @@ final class OpenFileRouter: ObservableObject {
         for url in urls where url.isFileURL {
             if Self.isImageFile(url) { continue }
             let standardized = url.standardizedFileURL
+            // 已打开：跳到对应标签，不新建
+            if DocumentWindowTabbing.focusIfAlreadyOpen(standardized) {
+                continue
+            }
             let key = standardized.path
             if let last = recentPathKeys[key], now.timeIntervalSince(last) < 2 {
                 continue
@@ -49,12 +56,13 @@ final class OpenFileRouter: ObservableObject {
             recentPathKeys[key] = now
             added.append(standardized)
         }
-        guard !added.isEmpty else { return }
+        guard !added.isEmpty else { return 0 }
 
         pendingURLs.append(contentsOf: added)
         epoch &+= 1
         NSApp.activate(ignoringOtherApps: true)
         scheduleNewWindowIfStillPending()
+        return added.count
     }
 
     func dequeue() -> URL? {

@@ -502,20 +502,33 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
+            // 已在任一标签打开：直接跳转，不重复打开
+            if DocumentWindowTabbing.focusIfAlreadyOpen(url) {
+                return
+            }
+
             if self.document.fileURL?.standardizedFileURL.path == url.standardizedFileURL.path {
+                if let window = self.view.window {
+                    DocumentWindowTabbing.activate(window)
+                }
                 return
             }
 
             let openNow = { [weak self] in
                 guard let self else { return }
                 if self.document.isDirty {
-                    OpenFileRouter.shared.enqueue([url])
+                    if OpenFileRouter.shared.enqueue([url]) > 0 {
+                        // 由 DocumentWorkspaceView 收通知后 openTab，并切到新标签
+                    }
                     return
                 }
                 _ = self.document.load(from: url)
                 self.lastPushedDocumentContextKey = ""
                 self.pushDocumentContextToEditor()
                 self.pushNativeContentIfNeeded()
+                if let window = self.view.window {
+                    DocumentWindowTabbing.activate(window)
+                }
             }
 
             if FolderAccessStore.shared.hasActiveAccess(toFile: url) {
@@ -525,6 +538,8 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
 
             FolderAccessStore.shared.requestAccess(toFile: url, sheetHost: hostWindow) { granted in
                 if granted {
+                    // 授权期间其它标签可能已打开该文件
+                    if DocumentWindowTabbing.focusIfAlreadyOpen(url) { return }
                     openNow()
                 }
                 // 用户取消授权：不弹第二层错误，侧栏保持可用

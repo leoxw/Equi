@@ -10,8 +10,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             EditorToolbar(openNewWindow: {
                 guard let url = DocumentModel.promptCreateNewFile() else { return }
-                OpenFileRouter.shared.enqueue([url])
-                DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                if OpenFileRouter.shared.enqueue([url]) > 0 {
+                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                }
             })
             Divider()
             editorStatusBanner
@@ -138,16 +139,18 @@ struct EditorToolbar: View {
 
             Button {
                 guard let url = DocumentModel.promptOpenFile() else { return }
+                if DocumentWindowTabbing.focusIfAlreadyOpen(url) { return }
                 if document.isDirty {
-                    OpenFileRouter.shared.enqueue([url])
-                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                    if OpenFileRouter.shared.enqueue([url]) > 0 {
+                        DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                    }
                 } else {
                     _ = document.load(from: url)
                 }
             } label: {
                 Label("打开", systemImage: "folder")
             }
-            .help("打开文件；若当前文稿未保存则新标签打开 (⌘O)")
+            .help("打开文件；已打开则跳转到对应标签；未保存时新标签打开 (⌘O)")
 
             Button { _ = document.save() } label: {
                 Label("存储", systemImage: "square.and.arrow.down")

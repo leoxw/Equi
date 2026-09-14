@@ -66,14 +66,20 @@ struct DocumentWorkspaceView: View {
     private func consumePendingFileIfNeeded() {
         guard canReuseCurrentDocument else { return }
         guard let url = openRouter.dequeue() else { return }
+        // 其它标签已打开同一文件：跳转过去，不要在本空窗再载入一份
+        if DocumentWindowTabbing.focusIfAlreadyOpen(url) { return }
         _ = document.load(from: url)
+        // 载入后确保本标签处于前台（新建空窗接文件时）
+        if let window = NSApp.keyWindow {
+            DocumentWindowTabbing.activate(window)
+        }
     }
 
     private func openIncomingFile(_ url: URL) {
+        if DocumentWindowTabbing.focusIfAlreadyOpen(url) { return }
         if canReuseCurrentDocument {
             _ = document.load(from: url)
-        } else {
-            OpenFileRouter.shared.enqueue([url])
+        } else if OpenFileRouter.shared.enqueue([url]) > 0 {
             DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
         }
     }
@@ -88,21 +94,23 @@ struct EquiCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("新建") {
                 guard let url = DocumentModel.promptCreateNewFile() else { return }
-                OpenFileRouter.shared.enqueue([url])
-                DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                if OpenFileRouter.shared.enqueue([url]) > 0 {
+                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                }
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("打开…") {
                 guard let url = DocumentModel.promptOpenFile() else { return }
+                if DocumentWindowTabbing.focusIfAlreadyOpen(url) { return }
                 // 当前文稿有未保存修改：新标签打开，避免冲掉编辑中内容
                 if document?.isDirty == true {
-                    OpenFileRouter.shared.enqueue([url])
-                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                    if OpenFileRouter.shared.enqueue([url]) > 0 {
+                        DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
+                    }
                 } else if let document {
                     _ = document.load(from: url)
-                } else {
-                    OpenFileRouter.shared.enqueue([url])
+                } else if OpenFileRouter.shared.enqueue([url]) > 0 {
                     DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
                 }
             }
