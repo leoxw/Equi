@@ -438,27 +438,54 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
 
     private func handleListDirectoryRequest(_ body: [String: Any]) {
         let requestId = body["requestId"] as? String ?? ""
-        func reply(_ payload: [String: Any]) {
-            var full = payload
-            full["requestId"] = requestId
-            evaluateCall("window.EditorAPI && window.EditorAPI.completeListDirectory", payload: full)
-        }
-        do {
-            let listing = try document.listDirectory(at: body["path"] as? String)
-            var payload: [String: Any] = [
-                "ok": true,
-                "path": listing.path,
-                "entries": listing.entries,
-            ]
-            if let parent = listing.parentPath {
-                payload["parentPath"] = parent
+        let path = body["path"] as? String
+        let docDir = document.documentDirectoryPath
+        let currentName = document.fileURL?.lastPathComponent
+
+        // iCloud 目录列举绝不能堵在主线程，否则打开文件后转圈卡死
+        Task.detached(priority: .userInitiated) {
+            let result: Result<DocumentModel.DirectoryListing, Error>
+            do {
+                let listing = try DocumentModel.listDirectoryOffMain(
+                    at: path,
+                    documentDirectoryPath: docDir,
+                    currentFileName: currentName
+                )
+                result = .success(listing)
+            } catch {
+                result = .failure(error)
             }
-            if let name = listing.currentFileName {
-                payload["currentFileName"] = name
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                switch result {
+                case .success(let listing):
+                    var payload: [String: Any] = [
+                        "ok": true,
+                        "path": listing.path,
+                        "entries": listing.entries,
+                    ]
+                    if let parent = listing.parentPath {
+                        payload["parentPath"] = parent
+                    }
+                    if let name = listing.currentFileName {
+                        payload["currentFileName"] = name
+                    }
+                    payload["requestId"] = requestId
+                    self.evaluateCall(
+                        "window.EditorAPI && window.EditorAPI.completeListDirectory",
+                        payload: payload
+                    )
+                case .failure(let error):
+                    self.evaluateCall(
+                        "window.EditorAPI && window.EditorAPI.completeListDirectory",
+                        payload: [
+                            "requestId": requestId,
+                            "ok": false,
+                            "error": error.localizedDescription,
+                        ]
+                    )
+                }
             }
-            reply(payload)
-        } catch {
-            reply(["ok": false, "error": error.localizedDescription])
         }
     }
 
@@ -467,11 +494,11 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
         let url = URL(fileURLWithPath: path)
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue {
-            // 文件夹应由 Web 侧 listDirectory 导航；此处忽略
             return
         }
 
-        // 必须异步：在 WKScriptMessageHandler 同步栈里 runModal / 重活会卡死 UI
+        let hostWindow = view.window
+        // 彻底离开 WKScriptMessageHandler / Task 同步段
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
@@ -491,21 +518,16 @@ final class EditorWebViewController: NSViewController, WKScriptMessageHandler, W
                 self.pushNativeContentIfNeeded()
             }
 
-            if FolderAccessStore.shared.hasAccess(toFile: url) {
+            if FolderAccessStore.shared.hasActiveAccess(toFile: url) {
                 openNow()
                 return
             }
 
-            FolderAccessStore.shared.requestAccess(toFile: url) { granted in
+            FolderAccessStore.shared.requestAccess(toFile: url, sheetHost: hostWindow) { granted in
                 if granted {
                     openNow()
-                } else {
-                    let alert = NSAlert()
-                    alert.messageText = "无法打开文件"
-                    alert.informativeText = "未获得该文件夹的访问权限。"
-                    alert.alertStyle = .warning
-                    alert.runModal()
                 }
+                // 用户取消授权：不弹第二层错误，侧栏保持可用
             }
         }
     }

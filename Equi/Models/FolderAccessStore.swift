@@ -2,62 +2,49 @@ import AppKit
 import Foundation
 
 /// 沙盒下侧栏打开同目录文件需要**目录级** security-scoped 权限。
-/// `NSOpenPanel` 选中单个文件只授予该文件；本类负责请求/持久化文件夹书签并保持访问。
 ///
-/// 注意：切勿在 `WKScriptMessageHandler` 同步回调里 `runModal()`，否则会与 WebKit 死锁。
-/// 需要弹窗时请走 `requestAccess`（下一 runloop 再呈现面板）。
+/// 约束：
+/// - 禁止在 WK bridge 同步栈里 `runModal`（会死锁）
+/// - 禁止在主线程做 iCloud 读盘 / 书签 resolve（会转圈卡死）
+/// - 弹窗只用 `beginSheetModal`（或下一拍 `runModal` 作为无 window 回退）
 @MainActor
 final class FolderAccessStore {
     static let shared = FolderAccessStore()
 
-    private let defaultsKey = "equi.folderSecurityBookmarks.v1"
-    /// 标准化路径 → bookmark Data
+    private let defaultsKey = "equi.folderSecurityBookmarks.v2"
+    private let legacyDefaultsKey = "equi.folderSecurityBookmarks.v1"
     private var bookmarkDataByPath: [String: Data] = [:]
-    /// 当前已 `startAccessing` 的目录（路径 → URL）
     private var activeAccessURLs: [String: URL] = [:]
-    /// 本会话内用户取消授权的目录，避免反复弹窗
     private var declinedThisSession: Set<String> = []
-    /// 正在弹出的授权，避免连点侧栏叠多个面板
     private var isPrompting = false
     private var pendingPromptCompletions: [String: [(Bool) -> Void]] = [:]
 
     private init() {
+        // v1 可能写入了会卡住 resolve 的坏书签；丢弃并改用 v2
+        UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
         loadBookmarks()
     }
 
-    // MARK: - Public
-
-    /// 静默恢复书签 / 已激活权限。**绝不弹窗、不读盘探测**（避免 iCloud 主线程卡住）。
-    func hasAccess(toDirectory directory: URL) -> Bool {
-        let dir = Self.standardizedDirectory(directory)
-        if coveringActiveURL(for: dir) != nil { return true }
-
-        var cursor = dir
-        while true {
-            if restoreBookmark(at: cursor), coveringActiveURL(for: dir) != nil {
-                return true
-            }
-            let parent = cursor.deletingLastPathComponent()
-            if parent.path == cursor.path { break }
-            cursor = parent
-        }
-        return false
+    /// 仅查内存中已激活的目录权限（不做书签 I/O）。
+    func hasActiveAccess(toDirectory directory: URL) -> Bool {
+        coveringActiveURL(for: Self.standardizedDirectory(directory)) != nil
     }
 
-    func hasAccess(toFile fileURL: URL) -> Bool {
-        hasAccess(toDirectory: fileURL.deletingLastPathComponent())
+    func hasActiveAccess(toFile fileURL: URL) -> Bool {
+        hasActiveAccess(toDirectory: fileURL.deletingLastPathComponent())
     }
 
-    /// 异步请求目录权限：已有则立刻回调；否则下一拍弹出文件夹选择面板。
+    /// 异步请求目录权限。书签恢复在后台执行，面板在主线程以 sheet 呈现。
     func requestAccess(
         toDirectory directory: URL,
         message: String? = nil,
+        sheetHost: NSWindow? = nil,
         completion: @escaping (Bool) -> Void
     ) {
         let dir = Self.standardizedDirectory(directory)
         let key = Self.pathKey(for: dir)
 
-        if hasAccess(toDirectory: dir) {
+        if coveringActiveURL(for: dir) != nil {
             completion(true)
             return
         }
@@ -68,50 +55,97 @@ final class FolderAccessStore {
 
         pendingPromptCompletions[key, default: []].append(completion)
         guard !isPrompting else { return }
-
         isPrompting = true
-        // 脱离 WK / Open 面板的同步调用栈，避免 runModal 死锁
-        DispatchQueue.main.async { [weak self] in
-            self?.presentDirectoryPrompt(for: dir, message: message)
+
+        let bookmarkSnapshot = bookmarkDataByPath
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let restored = Self.restoreBookmarkOffMain(
+                for: dir,
+                bookmarks: bookmarkSnapshot
+            )
+            await MainActor.run {
+                guard let self else { return }
+                if let restored {
+                    self.activate(url: restored)
+                    if self.coveringActiveURL(for: dir) != nil {
+                        self.finishPrompt(forKey: key, ok: true)
+                        return
+                    }
+                }
+                // 再下一拍，彻底离开任何 bridge/Open 面板调用栈
+                DispatchQueue.main.async {
+                    self.presentDirectoryPrompt(
+                        for: dir,
+                        message: message,
+                        sheetHost: sheetHost ?? NSApp.keyWindow
+                    )
+                }
+            }
         }
     }
 
-    func requestAccess(toFile fileURL: URL, completion: @escaping (Bool) -> Void) {
+    func requestAccess(
+        toFile fileURL: URL,
+        sheetHost: NSWindow? = nil,
+        completion: @escaping (Bool) -> Void
+    ) {
         let dir = fileURL.deletingLastPathComponent()
         requestAccess(
             toDirectory: dir,
             message: Self.defaultPromptMessage(for: dir),
+            sheetHost: sheetHost,
             completion: completion
         )
     }
 
-    /// 用户通过 Open/Save 面板选中文件或文件夹后调用。
     func rememberUserSelected(_ url: URL) {
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-        let dir: URL
-        if exists && isDir.boolValue {
-            dir = Self.standardizedDirectory(url)
-        } else {
-            dir = Self.standardizedDirectory(url.deletingLastPathComponent())
+        guard exists, isDir.boolValue else {
+            // 单文件 Open 无法升级为目录权限；不写书签、不做读盘探测
+            return
         }
+        let dir = Self.standardizedDirectory(url)
         declinedThisSession.remove(Self.pathKey(for: dir))
+        activate(url: dir)
+        saveBookmark(for: dir)
+    }
 
-        // 仅当用户直接选了文件夹时，才能把 scope 记成目录书签
-        if exists && isDir.boolValue {
-            activate(url: dir)
-            saveBookmark(for: dir)
+    // MARK: - Off-main bookmark restore
+
+    /// 在后台线程解析书签；成功则返回需在主线程 activate 的 URL。
+    nonisolated private static func restoreBookmarkOffMain(
+        for directory: URL,
+        bookmarks: [String: Data]
+    ) -> URL? {
+        var cursor = standardizedDirectory(directory)
+        while true {
+            let key = pathKey(for: cursor)
+            if let data = bookmarks[key] {
+                var isStale = false
+                if let resolved = try? URL(
+                    resolvingBookmarkData: data,
+                    options: [.withSecurityScope],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ), resolved.startAccessingSecurityScopedResource() {
+                    return resolved
+                }
+            }
+            let parent = cursor.deletingLastPathComponent()
+            if parent.path == cursor.path { break }
+            cursor = parent
         }
+        return nil
     }
 
     // MARK: - Internals
 
-    private static func standardizedDirectory(_ url: URL) -> URL {
-        // 不用 resolvingSymlinksInPath：在 iCloud/Mobile Documents 上可能极慢或卡住
+    nonisolated private static func standardizedDirectory(_ url: URL) -> URL {
         url.standardizedFileURL
     }
 
-    private static func pathKey(for url: URL) -> String {
+    nonisolated private static func pathKey(for url: URL) -> String {
         standardizedDirectory(url).path
     }
 
@@ -137,34 +171,7 @@ final class FolderAccessStore {
         activeAccessURLs[key] = url
     }
 
-    @discardableResult
-    private func restoreBookmark(at directory: URL) -> Bool {
-        let key = Self.pathKey(for: directory)
-        guard let data = bookmarkDataByPath[key] else { return false }
-        var isStale = false
-        do {
-            let resolved = try URL(
-                resolvingBookmarkData: data,
-                options: [.withSecurityScope],
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            guard resolved.startAccessingSecurityScopedResource() else {
-                return false
-            }
-            activeAccessURLs[Self.pathKey(for: resolved)] = resolved
-            if isStale {
-                saveBookmark(for: resolved)
-            }
-            return true
-        } catch {
-            bookmarkDataByPath.removeValue(forKey: key)
-            persistBookmarks()
-            return false
-        }
-    }
-
-    private func presentDirectoryPrompt(for directory: URL, message: String?) {
+    private func presentDirectoryPrompt(for directory: URL, message: String?, sheetHost: NSWindow?) {
         let key = Self.pathKey(for: directory)
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -175,43 +182,56 @@ final class FolderAccessStore {
         panel.message = message ?? Self.defaultPromptMessage(for: directory)
         panel.prompt = "授权访问"
 
-        let result = panel.runModal()
-        var ok = false
-        if result == .OK, let selected = panel.url {
-            let chosen = Self.standardizedDirectory(selected)
-            if chosen.startAccessingSecurityScopedResource() {
-                activeAccessURLs[Self.pathKey(for: chosen)] = chosen
-                saveBookmark(for: chosen)
-                declinedThisSession.remove(key)
-                declinedThisSession.remove(Self.pathKey(for: chosen))
-                ok = coveringActiveURL(for: directory) != nil
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] result in
+            guard let self else { return }
+            var ok = false
+            if result == .OK, let selected = panel.url {
+                let chosen = Self.standardizedDirectory(selected)
+                if chosen.startAccessingSecurityScopedResource() {
+                    self.activeAccessURLs[Self.pathKey(for: chosen)] = chosen
+                    self.saveBookmark(for: chosen)
+                    self.declinedThisSession.remove(key)
+                    self.declinedThisSession.remove(Self.pathKey(for: chosen))
+                    ok = self.coveringActiveURL(for: directory) != nil
+                }
+            } else {
+                self.declinedThisSession.insert(key)
             }
-        } else {
-            declinedThisSession.insert(key)
+            self.finishPrompt(forKey: key, ok: ok)
         }
 
+        if let sheetHost {
+            panel.beginSheetModal(for: sheetHost, completionHandler: finish)
+        } else {
+            // 无 window时退回 modal，但仍在异步上下文中
+            let result = panel.runModal()
+            finish(result)
+        }
+    }
+
+    private func finishPrompt(forKey key: String, ok: Bool) {
         isPrompting = false
         let completions = pendingPromptCompletions.removeValue(forKey: key) ?? []
-        // 若用户授权了祖先目录，其它等待中的子目录请求也可能已满足
         var remaining = pendingPromptCompletions
         pendingPromptCompletions = [:]
-        for completion in completions {
-            completion(ok)
-        }
+        completions.forEach { $0(ok) }
         for (pendingKey, pendingCompletions) in remaining {
             let pendingURL = URL(fileURLWithPath: pendingKey, isDirectory: true)
-            if hasAccess(toDirectory: pendingURL) {
+            if coveringActiveURL(for: pendingURL) != nil {
                 pendingCompletions.forEach { $0(true) }
             } else {
                 pendingPromptCompletions[pendingKey] = pendingCompletions
             }
         }
-        // 仍有未满足的请求则继续弹一次
         if let nextKey = pendingPromptCompletions.keys.first {
             let nextURL = URL(fileURLWithPath: nextKey, isDirectory: true)
             isPrompting = true
             DispatchQueue.main.async { [weak self] in
-                self?.presentDirectoryPrompt(for: nextURL, message: nil)
+                self?.presentDirectoryPrompt(
+                    for: nextURL,
+                    message: nil,
+                    sheetHost: NSApp.keyWindow
+                )
             }
         }
     }
@@ -227,7 +247,7 @@ final class FolderAccessStore {
             bookmarkDataByPath[key] = data
             persistBookmarks()
         } catch {
-            // 无 security scope 时创建书签可能失败，忽略
+            /* ignore */
         }
     }
 
