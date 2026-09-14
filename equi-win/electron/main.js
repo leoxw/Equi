@@ -446,8 +446,14 @@ async function openDocument(session) {
     ],
   });
   if (canceled || !filePaths?.[0]) return false;
+  const filePath = filePaths[0];
+  // 当前文稿有未保存修改：新窗口打开，避免冲掉编辑中内容（对齐 macOS 新标签）
+  if (session.doc.isDirty) {
+    createWindow(filePath);
+    return true;
+  }
   try {
-    session.doc.loadFromPath(filePaths[0]);
+    session.doc.loadFromPath(filePath);
     session.lastPushedRevision = 0;
     session.lastPushedMode = null;
     pushToEditor(session);
