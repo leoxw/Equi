@@ -89,6 +89,13 @@ EOF
 
 ensure_xcodeproj
 
+# 源资源上的 Finder/扩展属性会打进 .app，导致 codesign 失败
+if [[ -d "${ROOT}/Equi/Resources" ]]; then
+  echo "==> 清理 Equi/Resources 扩展属性"
+  find "${ROOT}/Equi/Resources" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
+  xattr -cr "${ROOT}/Equi/Resources" 2>/dev/null || true
+fi
+
 mkdir -p "${DIST_DIR}" "${DERIVED}"
 STAGE="${DIST_DIR}/dmg-stage"
 rm -rf "${STAGE}"
@@ -168,17 +175,75 @@ fi
 echo "==> 版本 ${VERSION} (${BUILD_NUMBER})"
 echo "==> App: ${APP_SRC}"
 
-# 清理扩展属性后做 ad-hoc 签名（无 Team 时必须；有 Team 时加固一次也无妨）
+# 清除扩展属性 / AppleDouble，否则 codesign 报：
+#   resource fork, Finder information, or similar detritus not allowed
+strip_codesign_detritus() {
+  local target="$1"
+  echo "==> 清理签名干扰属性: ${target}"
+  # Finder / 网络拷贝留下的垃圾文件
+  find "${target}" \( \
+      -name '._*' -o \
+      -name '.DS_Store' -o \
+      -name '.AppleDouble' -o \
+      -name '.Spotlight-V100' -o \
+      -name '.Trashes' \
+    \) -delete 2>/dev/null || true
+  if command -v dot_clean >/dev/null 2>&1; then
+    dot_clean -m "${target}" 2>/dev/null || true
+  fi
+  # 递归清除 xattr（优先）
+  xattr -cr "${target}" 2>/dev/null || true
+  # 兜底：逐个文件再清一遍（部分 macOS / 网络盘上 -cr 会漏）
+  find "${target}" -print0 2>/dev/null | while IFS= read -r -d '' f; do
+    xattr -c "${f}" 2>/dev/null || true
+  done
+}
+
+strip_codesign_detritus "${APP_SRC}"
+
+# 构建产物里若仍残留 FinderInfo / ResourceFork，打印出来便于排查
+if xattr -lr "${APP_SRC}" 2>/dev/null | grep -E 'com\.apple\.(FinderInfo|ResourceFork)' >/tmp/equi-xattr-remain.$$ 2>/dev/null; then
+  if [[ -s /tmp/equi-xattr-remain.$$ ]]; then
+    echo "警告：仍有扩展属性残留，尝试再次清除："
+    head -n 20 /tmp/equi-xattr-remain.$$ || true
+    while IFS= read -r line; do
+      file="${line%%:*}"
+      [[ -n "${file}" && -e "${file}" ]] && xattr -c "${file}" 2>/dev/null || true
+    done < /tmp/equi-xattr-remain.$$
+  fi
+  rm -f /tmp/equi-xattr-remain.$$
+fi
+
 echo "==> codesign (ad-hoc)"
-xattr -cr "${APP_SRC}" || true
+set +e
 if [[ -f "${ENTITLEMENTS}" ]]; then
   codesign --force --deep --sign - --entitlements "${ENTITLEMENTS}" "${APP_SRC}"
 else
   codesign --force --deep --sign - "${APP_SRC}"
 fi
+SIGN_STATUS=$?
+set -e
+if [[ "${SIGN_STATUS}" -ne 0 ]]; then
+  echo ""
+  echo "codesign 失败。请在本机执行以下命令查看残留属性后重试："
+  echo "  xattr -lr \"${APP_SRC}\" | grep -E 'FinderInfo|ResourceFork|com.apple' | head"
+  echo "  find \"${APP_SRC}\" -name '._*' -print"
+  echo "  xattr -cr \"${APP_SRC}\" && find \"${APP_SRC}\" -name '._*' -delete"
+  echo "  codesign --force --deep --sign - --entitlements Equi/Supporting/Equi.entitlements \"${APP_SRC}\""
+  exit "${SIGN_STATUS}"
+fi
 codesign --verify --verbose=2 "${APP_SRC}" || true
 
+# 拷到 stage 前再清一次，避免 cp 带回 detritus
+strip_codesign_detritus "${APP_SRC}"
 cp -R "${APP_SRC}" "${STAGE}/${APP_NAME}.app"
+# cp -R 可能复制出新的 xattr，stage 内再清并重签
+strip_codesign_detritus "${STAGE}/${APP_NAME}.app"
+if [[ -f "${ENTITLEMENTS}" ]]; then
+  codesign --force --deep --sign - --entitlements "${ENTITLEMENTS}" "${STAGE}/${APP_NAME}.app"
+else
+  codesign --force --deep --sign - "${STAGE}/${APP_NAME}.app"
+fi
 ln -sf /Applications "${STAGE}/Applications"
 
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
