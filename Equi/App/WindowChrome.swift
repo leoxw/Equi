@@ -19,28 +19,30 @@ enum WindowChrome {
         // 半透明背景：内容延伸到标题栏下方
         window.backgroundColor = NSColor.windowBackgroundColor
 
-        // 新窗口优先并入系统标签页（用户「偏好标签页」开启时更明显）
-        window.tabbingMode = .preferred
-        window.tabbingIdentifier = "com.leoxw.MarkDuo.document"
+        DocumentWindowTabbing.apply(to: window)
+    }
+}
 
-        // 保持系统标准交通灯位置（不要自定义 trafficLightPosition，除非刻意偏移）
-        // fullSizeContentView 下系统仍会将红黄绿放在左上角标准位置。
+/// 在窗口附着时立刻设置 tabbing，避免 openWindow 后先成独立窗、再改 mode 来不及并入标签。
+private final class WindowChromeNSView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        WindowChrome.apply(to: window)
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        WindowChrome.apply(to: window)
     }
 }
 
 /// 在 SwiftUI 层级挂载时，对宿主 NSWindow 应用 Chrome。
 struct WindowChromeConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            WindowChrome.apply(to: view.window)
-        }
-        return view
+        WindowChromeNSView()
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            WindowChrome.apply(to: nsView.window)
-        }
+        WindowChrome.apply(to: nsView.window)
     }
 }
