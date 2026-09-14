@@ -113,6 +113,7 @@ final class EquiAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DocumentWindowTabbing.preferTabsForThisApp()
         let files = commandLineFileURLs()
         guard !files.isEmpty else { return }
         OpenFileRouter.shared.enqueue(files)

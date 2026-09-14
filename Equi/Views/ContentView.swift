@@ -11,7 +11,7 @@ struct ContentView: View {
             EditorToolbar(openNewWindow: {
                 guard let url = DocumentModel.promptCreateNewFile() else { return }
                 OpenFileRouter.shared.enqueue([url])
-                openWindow(id: "document")
+                DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
             })
             Divider()
             editorStatusBanner
@@ -140,7 +140,7 @@ struct EditorToolbar: View {
                 guard let url = DocumentModel.promptOpenFile() else { return }
                 if document.isDirty {
                     OpenFileRouter.shared.enqueue([url])
-                    openWindow(id: "document")
+                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
                 } else {
                     _ = document.load(from: url)
                 }

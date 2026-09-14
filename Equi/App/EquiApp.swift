@@ -53,12 +53,12 @@ struct DocumentWorkspaceView: View {
                 if canReuseCurrentDocument {
                     consumePendingFileIfNeeded()
                 } else if openRouter.claimNewWindow() {
-                    openWindow(id: "document")
+                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
                 }
             }
     }
 
-    /// 无未保存修改且尚无关联文件时可复用本窗；有未保存修改则开新标签/新窗。
+    /// 无未保存修改且尚无关联文件时可复用本窗；有未保存修改则开新标签。
     private var canReuseCurrentDocument: Bool {
         !document.isDirty && document.fileURL == nil
     }
@@ -74,7 +74,7 @@ struct DocumentWorkspaceView: View {
             _ = document.load(from: url)
         } else {
             OpenFileRouter.shared.enqueue([url])
-            openWindow(id: "document")
+            DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
         }
     }
 }
@@ -89,21 +89,21 @@ struct EquiCommands: Commands {
             Button("新建") {
                 guard let url = DocumentModel.promptCreateNewFile() else { return }
                 OpenFileRouter.shared.enqueue([url])
-                openWindow(id: "document")
+                DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("打开…") {
                 guard let url = DocumentModel.promptOpenFile() else { return }
-                // 当前文稿有未保存修改：新标签/新窗打开，避免冲掉编辑中内容
+                // 当前文稿有未保存修改：新标签打开，避免冲掉编辑中内容
                 if document?.isDirty == true {
                     OpenFileRouter.shared.enqueue([url])
-                    openWindow(id: "document")
+                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
                 } else if let document {
                     _ = document.load(from: url)
                 } else {
                     OpenFileRouter.shared.enqueue([url])
-                    openWindow(id: "document")
+                    DocumentWindowTabbing.openTab(using: openWindow, host: NSApp.keyWindow)
                 }
             }
             .keyboardShortcut("o", modifiers: .command)
