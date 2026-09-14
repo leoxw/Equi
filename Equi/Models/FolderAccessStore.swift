@@ -3,6 +3,9 @@ import Foundation
 
 /// 沙盒下侧栏打开同目录文件需要**目录级** security-scoped 权限。
 /// `NSOpenPanel` 选中单个文件只授予该文件；本类负责请求/持久化文件夹书签并保持访问。
+///
+/// 注意：切勿在 `WKScriptMessageHandler` 同步回调里 `runModal()`，否则会与 WebKit 死锁。
+/// 需要弹窗时请走 `requestAccess`（下一 runloop 再呈现面板）。
 @MainActor
 final class FolderAccessStore {
     static let shared = FolderAccessStore()
@@ -12,8 +15,11 @@ final class FolderAccessStore {
     private var bookmarkDataByPath: [String: Data] = [:]
     /// 当前已 `startAccessing` 的目录（路径 → URL）
     private var activeAccessURLs: [String: URL] = [:]
-    /// 本会话内用户取消授权的目录，避免列表刷新时反复弹窗
+    /// 本会话内用户取消授权的目录，避免反复弹窗
     private var declinedThisSession: Set<String> = []
+    /// 正在弹出的授权，避免连点侧栏叠多个面板
+    private var isPrompting = false
+    private var pendingPromptCompletions: [String: [(Bool) -> Void]] = [:]
 
     private init() {
         loadBookmarks()
@@ -21,21 +27,11 @@ final class FolderAccessStore {
 
     // MARK: - Public
 
-    /// 确保可读写 `directory` 内的文件（侧栏打开、媒体目录等）。
-    @discardableResult
-    func ensureAccess(
-        toDirectory directory: URL,
-        promptIfNeeded: Bool,
-        message: String? = nil
-    ) -> Bool {
+    /// 静默恢复书签 / 已激活权限。**绝不弹窗、不读盘探测**（避免 iCloud 主线程卡住）。
+    func hasAccess(toDirectory directory: URL) -> Bool {
         let dir = Self.standardizedDirectory(directory)
-        let key = Self.pathKey(for: dir)
+        if coveringActiveURL(for: dir) != nil { return true }
 
-        if coveringActiveURL(for: dir) != nil {
-            return true
-        }
-
-        // 自该目录向根查找已保存的书签并恢复
         var cursor = dir
         while true {
             if restoreBookmark(at: cursor), coveringActiveURL(for: dir) != nil {
@@ -45,31 +41,51 @@ final class FolderAccessStore {
             if parent.path == cursor.path { break }
             cursor = parent
         }
-
-        // 已能读取同目录其他文件（非仅单文件 scope）
-        if canReadSiblingFiles(in: dir, besides: nil) {
-            activate(url: dir)
-            saveBookmark(for: dir)
-            declinedThisSession.remove(key)
-            return true
-        }
-
-        guard promptIfNeeded else { return false }
-        if declinedThisSession.contains(key) { return false }
-        return promptUserForDirectory(dir, message: message)
+        return false
     }
 
-    /// 确保可读取某个文件：优先恢复其父目录权限；失败时可弹窗授权。
-    @discardableResult
-    func ensureAccess(toFile fileURL: URL, promptIfNeeded: Bool) -> Bool {
-        ensureAccess(
-            toDirectory: fileURL.deletingLastPathComponent(),
-            promptIfNeeded: promptIfNeeded,
-            message: Self.defaultPromptMessage(for: fileURL.deletingLastPathComponent())
+    func hasAccess(toFile fileURL: URL) -> Bool {
+        hasAccess(toDirectory: fileURL.deletingLastPathComponent())
+    }
+
+    /// 异步请求目录权限：已有则立刻回调；否则下一拍弹出文件夹选择面板。
+    func requestAccess(
+        toDirectory directory: URL,
+        message: String? = nil,
+        completion: @escaping (Bool) -> Void
+    ) {
+        let dir = Self.standardizedDirectory(directory)
+        let key = Self.pathKey(for: dir)
+
+        if hasAccess(toDirectory: dir) {
+            completion(true)
+            return
+        }
+        if declinedThisSession.contains(key) {
+            completion(false)
+            return
+        }
+
+        pendingPromptCompletions[key, default: []].append(completion)
+        guard !isPrompting else { return }
+
+        isPrompting = true
+        // 脱离 WK / Open 面板的同步调用栈，避免 runModal 死锁
+        DispatchQueue.main.async { [weak self] in
+            self?.presentDirectoryPrompt(for: dir, message: message)
+        }
+    }
+
+    func requestAccess(toFile fileURL: URL, completion: @escaping (Bool) -> Void) {
+        let dir = fileURL.deletingLastPathComponent()
+        requestAccess(
+            toDirectory: dir,
+            message: Self.defaultPromptMessage(for: dir),
+            completion: completion
         )
     }
 
-    /// 用户通过 Open/Save 面板选中文件或文件夹后调用，尽量记下目录书签。
+    /// 用户通过 Open/Save 面板选中文件或文件夹后调用。
     func rememberUserSelected(_ url: URL) {
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
@@ -81,15 +97,8 @@ final class FolderAccessStore {
         }
         declinedThisSession.remove(Self.pathKey(for: dir))
 
-        // 面板返回的 URL 本身带 scope：对文件夹直接激活；对文件无法把 scope「升级」到父目录
+        // 仅当用户直接选了文件夹时，才能把 scope 记成目录书签
         if exists && isDir.boolValue {
-            activate(url: dir)
-            saveBookmark(for: dir)
-            return
-        }
-
-        // 若已能任意读取同目录其他文件，说明已有目录级权限（或非沙盒），尝试持久化
-        if canReadSiblingFiles(in: dir, besides: url) {
             activate(url: dir)
             saveBookmark(for: dir)
         }
@@ -98,7 +107,8 @@ final class FolderAccessStore {
     // MARK: - Internals
 
     private static func standardizedDirectory(_ url: URL) -> URL {
-        url.standardizedFileURL.resolvingSymlinksInPath()
+        // 不用 resolvingSymlinksInPath：在 iCloud/Mobile Documents 上可能极慢或卡住
+        url.standardizedFileURL
     }
 
     private static func pathKey(for url: URL) -> String {
@@ -112,11 +122,9 @@ final class FolderAccessStore {
 
     private func coveringActiveURL(for directory: URL) -> URL? {
         let path = Self.pathKey(for: directory)
-        // 已激活的祖先目录即可覆盖子路径
         for (key, url) in activeAccessURLs {
             if path == key { return url }
-            if path.hasPrefix(key.hasSuffix("/") ? key : key + "/") { return url }
-            // 根目录特殊情况
+            if key != "/", path.hasPrefix(key + "/") { return url }
             if key == "/" { return url }
         }
         return nil
@@ -125,7 +133,6 @@ final class FolderAccessStore {
     private func activate(url: URL) {
         let key = Self.pathKey(for: url)
         if activeAccessURLs[key] != nil { return }
-        // 无 security scope 时 start 也会返回 false，但仍可能因其他原因可读；先尝试
         _ = url.startAccessingSecurityScopedResource()
         activeAccessURLs[key] = url
     }
@@ -157,7 +164,8 @@ final class FolderAccessStore {
         }
     }
 
-    private func promptUserForDirectory(_ directory: URL, message: String?) -> Bool {
+    private func presentDirectoryPrompt(for directory: URL, message: String?) {
+        let key = Self.pathKey(for: directory)
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -167,46 +175,45 @@ final class FolderAccessStore {
         panel.message = message ?? Self.defaultPromptMessage(for: directory)
         panel.prompt = "授权访问"
 
-        guard panel.runModal() == .OK, let selected = panel.url else {
-            declinedThisSession.insert(Self.pathKey(for: directory))
-            return false
-        }
-
-        let chosen = Self.standardizedDirectory(selected)
-        guard chosen.startAccessingSecurityScopedResource() else {
-            return false
-        }
-        activeAccessURLs[Self.pathKey(for: chosen)] = chosen
-        saveBookmark(for: chosen)
-        declinedThisSession.remove(Self.pathKey(for: directory))
-        declinedThisSession.remove(Self.pathKey(for: chosen))
-
-        // 用户可能选了目标目录或其祖先
-        return coveringActiveURL(for: directory) != nil
-    }
-
-    /// 探测是否已有目录级可读权限（排除当前已打开、仅有单文件 scope 的那份）。
-    private func canReadSiblingFiles(in directory: URL, besides excluded: URL?) -> Bool {
-        let excludedPath = excluded.map { $0.standardizedFileURL.path }
-        guard let items = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return false
-        }
-        for item in items {
-            if item.standardizedFileURL.path == excludedPath { continue }
-            let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
-            if values?.isDirectory == true { continue }
-            if values?.isRegularFile != true { continue }
-            if (try? Data(contentsOf: item, options: [.uncached])) != nil {
-                return true
+        let result = panel.runModal()
+        var ok = false
+        if result == .OK, let selected = panel.url {
+            let chosen = Self.standardizedDirectory(selected)
+            if chosen.startAccessingSecurityScopedResource() {
+                activeAccessURLs[Self.pathKey(for: chosen)] = chosen
+                saveBookmark(for: chosen)
+                declinedThisSession.remove(key)
+                declinedThisSession.remove(Self.pathKey(for: chosen))
+                ok = coveringActiveURL(for: directory) != nil
             }
-            // 存在同目录文件但读失败 → 仍是单文件权限
-            return false
+        } else {
+            declinedThisSession.insert(key)
         }
-        return false
+
+        isPrompting = false
+        let completions = pendingPromptCompletions.removeValue(forKey: key) ?? []
+        // 若用户授权了祖先目录，其它等待中的子目录请求也可能已满足
+        var remaining = pendingPromptCompletions
+        pendingPromptCompletions = [:]
+        for completion in completions {
+            completion(ok)
+        }
+        for (pendingKey, pendingCompletions) in remaining {
+            let pendingURL = URL(fileURLWithPath: pendingKey, isDirectory: true)
+            if hasAccess(toDirectory: pendingURL) {
+                pendingCompletions.forEach { $0(true) }
+            } else {
+                pendingPromptCompletions[pendingKey] = pendingCompletions
+            }
+        }
+        // 仍有未满足的请求则继续弹一次
+        if let nextKey = pendingPromptCompletions.keys.first {
+            let nextURL = URL(fileURLWithPath: nextKey, isDirectory: true)
+            isPrompting = true
+            DispatchQueue.main.async { [weak self] in
+                self?.presentDirectoryPrompt(for: nextURL, message: nil)
+            }
+        }
     }
 
     private func saveBookmark(for directory: URL) {
