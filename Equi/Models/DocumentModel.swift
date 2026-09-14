@@ -123,7 +123,7 @@ final class DocumentModel: ObservableObject {
     }
 
     /// 编辑器可打开的文本扩展名（与打开面板对齐）；图片等排除。
-    static let openableTextExtensions: Set<String> = [
+    nonisolated static let openableTextExtensions: Set<String> = [
         "md", "markdown", "mdown", "mkd", "mdwn", "mkdn",
         "txt", "text", "log", "csv",
         "json", "xml", "yml", "yaml", "toml", "ini", "cfg", "conf",
@@ -135,25 +135,29 @@ final class DocumentModel: ObservableObject {
         "sql", "r", "lua", "pl", "pm",
     ]
 
-    private static let excludedBrowserExtensions: Set<String> = [
+    nonisolated private static let excludedBrowserExtensions: Set<String> = [
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif",
         "pdf", "zip", "dmg", "pkg", "app", "exe", "dll", "so", "dylib",
         "mp3", "mp4", "mov", "avi", "wav", "icns", "ico",
     ]
 
-    struct DirectoryListing {
+    struct DirectoryListing: Sendable {
         let path: String
         let parentPath: String?
         let currentFileName: String?
         let entries: [[String: String]]
     }
 
-    /// 列举目录：文件夹 + 可打开文本文件。`path` 为空时用文稿目录。
-    func listDirectory(at path: String?) throws -> DirectoryListing {
+    /// 后台线程安全的目录列举（勿在主线程对 iCloud 路径调用）。
+    nonisolated static func listDirectoryOffMain(
+        at path: String?,
+        documentDirectoryPath: String?,
+        currentFileName: String?
+    ) throws -> DirectoryListing {
         let dirPath: String
         if let path, !path.isEmpty {
             dirPath = path
-        } else if let documentDirectoryPath {
+        } else if let documentDirectoryPath, !documentDirectoryPath.isEmpty {
             dirPath = documentDirectoryPath
         } else {
             throw NSError(domain: "Equi", code: 20, userInfo: [
@@ -169,29 +173,26 @@ final class DocumentModel: ObservableObject {
         }
 
         let dirURL = URL(fileURLWithPath: dirPath, isDirectory: true)
-        // 仅静默恢复书签，绝不在 bridge 回调里弹窗（否则会与 WebKit 死锁）
-        _ = FolderAccessStore.shared.hasAccess(toDirectory: dirURL)
-
         let contents = try FileManager.default.contentsOfDirectory(
             at: dirURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .isHiddenKey, .nameKey],
-            options: [.skipsPackageDescendants]
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .nameKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
         )
 
         var dirs: [[String: String]] = []
         var files: [[String: String]] = []
         for url in contents {
-            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isHiddenKey])
-            if values.isHidden == true { continue }
             let name = url.lastPathComponent
             if name.hasPrefix(".") { continue }
-            if values.isDirectory == true {
+            // 使用 contentsOfDirectory 预取的缓存值，避免再次触发 iCloud 元数据请求
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+            if values?.isDirectory == true {
                 dirs.append(["name": name, "kind": "dir", "path": url.path])
                 continue
             }
             let ext = url.pathExtension.lowercased()
-            if Self.excludedBrowserExtensions.contains(ext) { continue }
-            if ext.isEmpty || Self.openableTextExtensions.contains(ext) {
+            if excludedBrowserExtensions.contains(ext) { continue }
+            if ext.isEmpty || openableTextExtensions.contains(ext) {
                 files.append(["name": name, "kind": "file", "path": url.path])
             }
         }
@@ -201,7 +202,6 @@ final class DocumentModel: ObservableObject {
 
         let parent = dirURL.deletingLastPathComponent()
         let parentPath: String? = {
-            // 到根目录时 parent 与自身相同或空
             if parent.path == dirURL.path || parent.path.isEmpty { return nil }
             if parent.path == "/" { return "/" }
             return parent.path
@@ -210,8 +210,17 @@ final class DocumentModel: ObservableObject {
         return DirectoryListing(
             path: dirURL.path,
             parentPath: parentPath,
-            currentFileName: fileURL?.lastPathComponent,
+            currentFileName: currentFileName,
             entries: dirs + files
+        )
+    }
+
+    /// 列举目录：文件夹 + 可打开文本文件。`path` 为空时用文稿目录。
+    func listDirectory(at path: String?) throws -> DirectoryListing {
+        try Self.listDirectoryOffMain(
+            at: path,
+            documentDirectoryPath: documentDirectoryPath,
+            currentFileName: fileURL?.lastPathComponent
         )
     }
 
@@ -386,10 +395,9 @@ final class DocumentModel: ObservableObject {
             return false
         }
 
-        // 已有目录书签则用之；否则保留单文件 security scope（Open 面板 / Finder）
-        // 需要弹窗授权时由调用方走 FolderAccessStore.requestAccess（异步），避免死锁
+        // 已有目录权限则用之；否则保留单文件 security scope（Open 面板 / Finder）
         let directory = url.deletingLastPathComponent()
-        if FolderAccessStore.shared.hasAccess(toDirectory: directory) {
+        if FolderAccessStore.shared.hasActiveAccess(toDirectory: directory) {
             releaseSecurityScope()
         } else {
             retainSecurityScope(for: url)
@@ -407,7 +415,19 @@ final class DocumentModel: ObservableObject {
     }
 
     private func applyLoadedFile(at url: URL) throws {
-        let data = try Data(contentsOf: url)
+        // 用 FileCoordinator，避免对 iCloud 占位文件直接 Data(contentsOf:) 挂起主线程太久
+        var coordError: NSError?
+        var loaded: Data?
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(readingItemAt: url, options: [], error: &coordError) { readable in
+            loaded = try? Data(contentsOf: readable, options: [.mappedIfSafe])
+        }
+        if let coordError { throw coordError }
+        guard let data = loaded else {
+            throw NSError(domain: "Equi", code: 22, userInfo: [
+                NSLocalizedDescriptionKey: "无法读取文件内容",
+            ])
+        }
         let text = String(decoding: data, as: UTF8.self)
         fileURL = url
         kind = DocumentKind.infer(from: url)
@@ -449,7 +469,7 @@ final class DocumentModel: ObservableObject {
 
     private func write(to url: URL, updatingKind: Bool) -> Bool {
         let directory = url.deletingLastPathComponent()
-        if FolderAccessStore.shared.hasAccess(toDirectory: directory) {
+        if FolderAccessStore.shared.hasActiveAccess(toDirectory: directory) {
             releaseSecurityScope()
         } else {
             retainSecurityScope(for: url)
