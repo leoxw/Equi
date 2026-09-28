@@ -1,0 +1,86 @@
+import type { AppConfig, MapProjection } from "../types";
+import { shortProvinceName } from "../types";
+import { placeCallout } from "../map/project";
+
+export function renderPreview(
+  container: HTMLElement,
+  projection: MapProjection,
+  config: AppConfig,
+): void {
+  const { viewBox } = projection;
+  const selected = new Set(config.selectedOrder);
+
+  const paths = projection.provinces
+    .map((p) => {
+      const hi = selected.has(p.adcode);
+      return `<path data-adcode="${p.adcode}" class="prov${hi ? " is-hot" : ""}" d="${p.svgPath}">
+        <title>${p.name}</title>
+      </path>`;
+    })
+    .join("");
+
+  const markers = config.selectedOrder
+    .map((adcode, index) => {
+      const p = projection.provinces.find((x) => x.adcode === adcode);
+      const tip = config.tips[adcode];
+      if (!p || !tip) return "";
+      const box = placeCallout(
+        p.centroid,
+        config.size.widthIn,
+        config.size.heightIn,
+        index,
+        config.selectedOrder.length,
+      );
+      // Map callout inch position into svg space roughly on the right.
+      const sx =
+        viewBox.minX +
+        viewBox.width * 0.72 +
+        ((box.x / config.size.widthIn) * 0.05 - 0.02) * viewBox.width;
+      const sy =
+        viewBox.minY +
+        viewBox.height * (0.12 + (index / Math.max(config.selectedOrder.length, 1)) * 0.7);
+      const fields = tip.fields
+        .filter((f) => f.key.trim() || f.value.trim())
+        .map(
+          (f) =>
+            `<div class="pv-row"><span>${escapeHtml(f.key || "指标")}</span><strong>${escapeHtml(f.value || "—")}</strong></div>`,
+        )
+        .join("");
+      return `<foreignObject x="${sx}" y="${sy}" width="${viewBox.width * 0.26}" height="${viewBox.height * 0.18}" class="pv-callout-fo">
+        <div xmlns="http://www.w3.org/1999/xhtml" class="pv-callout">
+          <div class="pv-title">${escapeHtml(tip.title || shortProvinceName(tip.name))}</div>
+          ${fields}
+        </div>
+      </foreignObject>`;
+    })
+    .join("");
+
+  container.innerHTML = `
+    <svg class="map-svg" viewBox="${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}" role="img" aria-label="中国分省地图预览">
+      <defs>
+        <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0a1c28"/>
+          <stop offset="100%" stop-color="#123548"/>
+        </linearGradient>
+        <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="2.2" result="b"/>
+          <feMerge>
+            <feMergeNode in="b"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      <rect x="${viewBox.minX}" y="${viewBox.minY}" width="${viewBox.width}" height="${viewBox.height}" fill="url(#sea)"/>
+      <g class="provinces">${paths}</g>
+      ${markers}
+    </svg>
+  `;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
