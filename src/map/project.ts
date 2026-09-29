@@ -186,6 +186,100 @@ function isMainlandRing(ring: Ring): boolean {
   return ringMaxLat(ring) >= MAINLAND_LAT_CUTOFF;
 }
 
+function ringBBox(ring: Ring): {
+  minLon: number;
+  maxLon: number;
+  minLat: number;
+  maxLat: number;
+} {
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  for (const [lon, lat] of ring) {
+    minLon = Math.min(minLon, lon);
+    maxLon = Math.max(maxLon, lon);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+  return { minLon, maxLon, minLat, maxLat };
+}
+
+function ringOverlapsScsFrame(ring: Ring): boolean {
+  const b = ringBBox(ring);
+  return !(
+    b.maxLon < SCS_FRAME_BOUNDS.minLon ||
+    b.minLon > SCS_FRAME_BOUNDS.maxLon ||
+    b.maxLat < SCS_FRAME_BOUNDS.minLat ||
+    b.minLat > SCS_FRAME_BOUNDS.maxLat
+  );
+}
+
+/** Sutherland–Hodgman clip of a lon/lat ring to the SCS inset rectangle. */
+function clipRingToScsFrame(ring: Ring): Ring | null {
+  type Edge = "left" | "right" | "bottom" | "top";
+  const edges: Edge[] = ["left", "right", "bottom", "top"];
+  const { minLon, maxLon, minLat, maxLat } = SCS_FRAME_BOUNDS;
+
+  const inside = (p: Position, edge: Edge): boolean => {
+    const [x, y] = p;
+    if (edge === "left") return x >= minLon;
+    if (edge === "right") return x <= maxLon;
+    if (edge === "bottom") return y >= minLat;
+    return y <= maxLat;
+  };
+
+  const intersect = (a: Position, b: Position, edge: Edge): Position => {
+    const [x1, y1] = a;
+    const [x2, y2] = b;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    if (edge === "left" || edge === "right") {
+      const x = edge === "left" ? minLon : maxLon;
+      const t = Math.abs(dx) < 1e-12 ? 0 : (x - x1) / dx;
+      return [x, y1 + t * dy];
+    }
+    const y = edge === "bottom" ? minLat : maxLat;
+    const t = Math.abs(dy) < 1e-12 ? 0 : (y - y1) / dy;
+    return [x1 + t * dx, y];
+  };
+
+  let output = ring.slice();
+  if (
+    output.length >= 2 &&
+    (output[0][0] !== output[output.length - 1][0] ||
+      output[0][1] !== output[output.length - 1][1])
+  ) {
+    output = [...output, output[0]];
+  }
+
+  for (const edge of edges) {
+    if (output.length < 2) return null;
+    const input = output;
+    output = [];
+    for (let i = 0; i < input.length - 1; i++) {
+      const cur = input[i];
+      const next = input[i + 1];
+      const curIn = inside(cur, edge);
+      const nextIn = inside(next, edge);
+      if (curIn && nextIn) {
+        output.push(next);
+      } else if (curIn && !nextIn) {
+        output.push(intersect(cur, next, edge));
+      } else if (!curIn && nextIn) {
+        output.push(intersect(cur, next, edge), next);
+      }
+    }
+    if (output.length > 0) {
+      const first = output[0];
+      const last = output[output.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) output.push(first);
+    }
+  }
+
+  return output.length >= 4 ? output : null;
+}
+
 export function loadProvinceMeta(
   geo: FeatureCollection,
 ): Array<{ adcode: string; name: string }> {
@@ -345,6 +439,7 @@ export function projectChinaMap(
   const mainlandPts: Pt[] = [];
   const scsRings: Pt[][] = [];
   const scsLonLatRings: Ring[] = [];
+  const scsMainlandLonLat: Ring[] = [];
 
   for (const feature of geo.features as Feature<Polygon | MultiPolygon>[]) {
     const name = feature.properties?.name;
@@ -354,8 +449,13 @@ export function projectChinaMap(
 
     const mainlandRaw: Ring[] = [];
     for (const ring of rawRings) {
-      if (isMainlandRing(ring)) mainlandRaw.push(ring);
-      else {
+      if (isMainlandRing(ring)) {
+        mainlandRaw.push(ring);
+        if (ringOverlapsScsFrame(ring)) {
+          const clipped = clipRingToScsFrame(ring);
+          if (clipped) scsMainlandLonLat.push(clipped);
+        }
+      } else {
         scsLonLatRings.push(ring);
         scsRings.push(ring.map(([lon, lat]) => projectScsLonLat(lon, lat)));
       }
@@ -472,6 +572,27 @@ export function projectChinaMap(
     };
   });
 
+  // Mainland / Taiwan / Hainan clipped into the SCS inset (drawn under islands & dashes).
+  const mainlandCandidates = scsMainlandLonLat
+    .map((ring) => ({ ring, area: ringArea(ring) }))
+    .sort((a, b) => b.area - a.area);
+  const mainlandAreaThresh = mainlandCandidates[0]
+    ? mainlandCandidates[0].area * 0.0008
+    : 0;
+  const mainlandShapes: ProjectedIsland[] = mainlandCandidates
+    .filter((c, i) => i < 20 || c.area >= mainlandAreaThresh)
+    .map((c) => {
+      const projected = c.ring.map(([lon, lat]) => projectScsLonLat(lon, lat));
+      if (projected.length < 3) return null;
+      const shape = buildShapeFromRings([projected], scsFit, svgScale, svgOrigin);
+      return {
+        points: shape.points,
+        box: shape.box,
+        svgPath: shape.svgPath,
+      } satisfies ProjectedIsland;
+    })
+    .filter((s): s is ProjectedIsland => Boolean(s));
+
   // Ten-dash line: each GeoJSON segment is one atlas dash stroke.
   const dashes: SouthChinaSeaInset["dashes"] = [];
   const dashSvg: string[] = [];
@@ -503,6 +624,7 @@ export function projectChinaMap(
       w: insetBox.w * svgScale,
       h: insetBox.h * svgScale,
     },
+    mainland: mainlandShapes,
     islands,
     dashes,
     dashSvgPath: dashSvg.join(" "),

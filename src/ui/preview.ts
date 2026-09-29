@@ -26,6 +26,13 @@ export function renderPreview(
     })
     .join("");
 
+  const mainlandPaths = scsInset.mainland
+    .map(
+      (land) =>
+        `<path class="scs-mainland" fill="#${scs.mainlandFill}" stroke="#${scs.mainlandStroke}" stroke-width="0.55" d="${land.svgPath}" />`,
+    )
+    .join("");
+
   const islandPaths = scsInset.islands
     .map(
       (isle) =>
@@ -98,6 +105,7 @@ export function renderPreview(
           stroke-width="0.9"
           opacity="0.92"
         />
+        ${mainlandPaths}
         ${islandPaths}
         <path class="scs-dash" d="${scsInset.dashSvgPath}" fill="none" stroke="#${scs.dash}" stroke-width="0.85" stroke-linecap="round" opacity="0.55" />
       </g>

@@ -34,7 +34,7 @@ export function softScsColors(theme: {
   mapStroke: string;
   slideBg: string;
   calloutText: string;
-}): { frameFill: string; frameStroke: string; island: string; islandStroke: string; dash: string } {
+}): { frameFill: string; frameStroke: string; island: string; islandStroke: string; dash: string; mainlandFill: string; mainlandStroke: string } {
   return {
     frameFill: mixHex(theme.slideBg, theme.mapFill, 0.35),
     frameStroke: mixHex(theme.slideBg, theme.mapStroke, 0.55),
@@ -42,5 +42,8 @@ export function softScsColors(theme: {
     islandStroke: mixHex(theme.slideBg, theme.mapStroke, 0.4),
     // Soft gray dashes — readable on light atlas, understated on dark.
     dash: mixHex(theme.slideBg, theme.calloutText, 0.32),
+    // Mainland land inside inset needs stronger contrast than pale mapFill alone.
+    mainlandFill: mixHex(theme.mapFill, theme.mapStroke, 0.28),
+    mainlandStroke: mixHex(theme.mapStroke, theme.calloutText, 0.25),
   };
 }

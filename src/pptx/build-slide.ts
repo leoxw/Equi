@@ -89,6 +89,19 @@ export async function buildPptxBlob(
     objectName: "scs_frame",
   });
 
+  for (const [i, land] of scs.mainland.entries()) {
+    slide.addShape("custGeom" as PptxGenJS.ShapeType, {
+      x: land.box.x,
+      y: land.box.y,
+      w: land.box.w,
+      h: land.box.h,
+      fill: { color: hex(scsColors.mainlandFill) },
+      line: { color: hex(scsColors.mainlandStroke), width: 0.7 },
+      points: land.points as PptxGenJS.ShapeProps["points"],
+      objectName: `scs_mainland_${i}`,
+    });
+  }
+
   for (const [i, isle] of scs.islands.entries()) {
     slide.addShape("custGeom" as PptxGenJS.ShapeType, {
       x: isle.box.x,

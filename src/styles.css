@@ -424,6 +424,7 @@ body::before {
 }
 
 .scs-frame,
+.scs-mainland,
 .scs-island,
 .scs-dash {
   pointer-events: none;

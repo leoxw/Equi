@@ -76,6 +76,8 @@ export interface SouthChinaSeaInset {
   box: { x: number; y: number; w: number; h: number };
   /** Outer frame in SVG viewBox units. */
   svgBox: { x: number; y: number; w: number; h: number };
+  /** Mainland / Taiwan / Hainan land clipped into the inset. */
+  mainland: ProjectedIsland[];
   islands: ProjectedIsland[];
   /** Short dash segments in slide inches (absolute). */
   dashes: Array<{ x1: number; y1: number; x2: number; y2: number }>;

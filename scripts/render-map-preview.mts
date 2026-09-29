@@ -21,12 +21,19 @@ const islands = scs.islands
       `<path fill="#${scsColors.island}" stroke="#${scsColors.islandStroke}" stroke-width="0.35" d="${i.svgPath}"/>`,
   )
   .join("\n");
+const mainland = scs.mainland
+  .map(
+    (i) =>
+      `<path fill="#${scsColors.mainlandFill}" stroke="#${scsColors.mainlandStroke}" stroke-width="0.55" d="${i.svgPath}"/>`,
+  )
+  .join("\n");
 const h = Math.round((900 * vb.height) / vb.width);
 const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.minX} ${vb.minY} ${vb.width} ${vb.height}" width="900" height="${h}">
   <rect x="${vb.minX}" y="${vb.minY}" width="${vb.width}" height="${vb.height}" fill="#${theme.slideBg}"/>
   ${paths}
   <rect x="${scs.svgBox.x}" y="${scs.svgBox.y}" width="${scs.svgBox.w}" height="${scs.svgBox.h}" fill="#${scsColors.frameFill}" stroke="#${scsColors.frameStroke}" stroke-width="1" rx="1.2" opacity="0.92"/>
+  ${mainland}
   ${islands}
   <path d="${scs.dashSvgPath}" fill="none" stroke="#${scsColors.dash}" stroke-width="1.1" stroke-linecap="round" opacity="0.75"/>
 </svg>`;
@@ -37,6 +44,7 @@ writeFileSync(
 );
 console.log({
   ratio: +(p.mapRect.w / p.mapRect.h).toFixed(3),
+  mainland: scs.mainland.length,
   islands: scs.islands.length,
   dashes: scs.dashes.length,
   scsColors,
