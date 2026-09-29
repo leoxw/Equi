@@ -319,6 +319,34 @@ function fitBounds(
   };
 }
 
+/** Fit content into rect, pin northern edge to the top (no empty band above mainland). */
+function fitBoundsTopAligned(
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  rect: { x: number; y: number; w: number; h: number },
+  pad: { top?: number; side?: number; bottom?: number } = {},
+): Fit {
+  const top = pad.top ?? 0.008;
+  const side = pad.side ?? 0.05;
+  const bottom = pad.bottom ?? 0.06;
+  const geoW = Math.max(bounds.maxX - bounds.minX, 1e-6);
+  const geoH = Math.max(bounds.maxY - bounds.minY, 1e-6);
+  const padL = rect.w * side;
+  const padR = rect.w * side;
+  const padT = rect.h * top;
+  const padB = rect.h * bottom;
+  const scale = Math.min(
+    (rect.w - padL - padR) / geoW,
+    (rect.h - padT - padB) / geoH,
+  );
+  const usedW = geoW * scale;
+  return {
+    originX: rect.x + padL + (rect.w - padL - padR - usedW) / 2,
+    originY: rect.y + padT,
+    scale,
+    bounds,
+  };
+}
+
 function toSlide(p: Pt, fit: Fit): Pt {
   return {
     x: fit.originX + (p.x - fit.bounds.minX) * fit.scale,
@@ -511,19 +539,57 @@ export function projectChinaMap(
     h: insetH,
   };
 
-  // Fit SCS content into standard atlas frame 105–123°E / 3–24°N.
+  // Fit SCS content to content bounds (not empty sea north of mainland).
+  // Include mainland clips + islands + ten-dash line; widen lon to atlas span.
+  const scsLonLatPts: Position[] = [];
+  for (const ring of scsMainlandLonLat) scsLonLatPts.push(...ring);
+  for (const ring of scsLonLatRings) scsLonLatPts.push(...ring);
+  for (const seg of TEN_DASH_SEGMENTS) scsLonLatPts.push(...seg);
+
+  let cMinLon = Infinity;
+  let cMaxLon = -Infinity;
+  let cMinLat = Infinity;
+  let mainlandMaxLat = -Infinity;
+  for (const ring of scsMainlandLonLat) {
+    for (const [lon, lat] of ring) {
+      cMinLon = Math.min(cMinLon, lon);
+      cMaxLon = Math.max(cMaxLon, lon);
+      cMinLat = Math.min(cMinLat, lat);
+      mainlandMaxLat = Math.max(mainlandMaxLat, lat);
+    }
+  }
+  for (const [lon, lat] of scsLonLatPts) {
+    cMinLon = Math.min(cMinLon, lon);
+    cMaxLon = Math.max(cMaxLon, lon);
+    cMinLat = Math.min(cMinLat, lat);
+  }
+  // Keep a stable east-west atlas width.
+  cMinLon = Math.min(cMinLon, SCS_FRAME_BOUNDS.minLon);
+  cMaxLon = Math.max(cMaxLon, SCS_FRAME_BOUNDS.maxLon);
+  cMinLat = Math.min(cMinLat, SCS_FRAME_BOUNDS.minLat);
+  // North edge hugs mainland land (ignore dash tips that sit above the coast).
+  const cMaxLat =
+    mainlandMaxLat > -Infinity
+      ? Math.min(SCS_FRAME_BOUNDS.maxLat, mainlandMaxLat)
+      : SCS_FRAME_BOUNDS.maxLat;
+
   const scsPts: Pt[] = [
-    projectScsLonLat(SCS_FRAME_BOUNDS.minLon, SCS_FRAME_BOUNDS.minLat),
-    projectScsLonLat(SCS_FRAME_BOUNDS.maxLon, SCS_FRAME_BOUNDS.minLat),
-    projectScsLonLat(SCS_FRAME_BOUNDS.maxLon, SCS_FRAME_BOUNDS.maxLat),
-    projectScsLonLat(SCS_FRAME_BOUNDS.minLon, SCS_FRAME_BOUNDS.maxLat),
+    projectScsLonLat(cMinLon, cMinLat),
+    projectScsLonLat(cMaxLon, cMinLat),
+    projectScsLonLat(cMaxLon, cMaxLat),
+    projectScsLonLat(cMinLon, cMaxLat),
   ];
-  for (const ring of scsRings) scsPts.push(...ring);
-  for (const seg of TEN_DASH_SEGMENTS) {
-    for (const [lon, lat] of seg) scsPts.push(projectScsLonLat(lon, lat));
+  for (const [lon, lat] of scsLonLatPts) {
+    const clampedLat = Math.min(lat, cMaxLat);
+    if (lat < cMinLat) continue;
+    scsPts.push(projectScsLonLat(lon, clampedLat));
   }
   const scsBounds = bboxOfPoints(scsPts);
-  const scsFit = fitBounds(scsBounds, insetBox, 0.06);
+  const scsFit = fitBoundsTopAligned(scsBounds, insetBox, {
+    top: 0,
+    side: 0.04,
+    bottom: 0.05,
+  });
 
   const svgScale = 20;
   // Preview/SVG uses the full slide canvas so callouts and 南海 inset don't collide.
