@@ -1,0 +1,51 @@
+import { writeFileSync } from "fs";
+import chinaGeo from "../src/map/china-provinces.json";
+import { projectChinaMap } from "../src/map/project.ts";
+import { softScsColors } from "../src/ui/colors.ts";
+import { DEFAULT_THEME } from "../src/types.ts";
+import type { FeatureCollection } from "geojson";
+
+const theme = DEFAULT_THEME;
+const scsColors = softScsColors(theme);
+const p = projectChinaMap(chinaGeo as FeatureCollection, 13.333, 7.5);
+const { viewBox: vb, scsInset: scs } = p;
+const paths = p.provinces
+  .map((prov) => {
+    const hi = ["320000", "330000", "440000"].includes(prov.adcode);
+    return `<path fill="#${hi ? theme.highlight : theme.mapFill}" stroke="#${hi ? theme.highlightStroke : theme.mapStroke}" stroke-width="${hi ? 1.2 : 0.6}" d="${prov.svgPath}"/>`;
+  })
+  .join("\n");
+const islands = scs.islands
+  .map(
+    (i) =>
+      `<path fill="#${scsColors.island}" stroke="#${scsColors.islandStroke}" stroke-width="0.35" d="${i.svgPath}"/>`,
+  )
+  .join("\n");
+const mainland = scs.mainland
+  .map(
+    (i) =>
+      `<path fill="#${scsColors.mainlandFill}" stroke="#${scsColors.mainlandStroke}" stroke-width="0.55" d="${i.svgPath}"/>`,
+  )
+  .join("\n");
+const h = Math.round((900 * vb.height) / vb.width);
+const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.minX} ${vb.minY} ${vb.width} ${vb.height}" width="900" height="${h}">
+  <rect x="${vb.minX}" y="${vb.minY}" width="${vb.width}" height="${vb.height}" fill="#${theme.slideBg}"/>
+  ${paths}
+  <rect x="${scs.svgBox.x}" y="${scs.svgBox.y}" width="${scs.svgBox.w}" height="${scs.svgBox.h}" fill="#${scsColors.frameFill}" stroke="#${scsColors.frameStroke}" stroke-width="1" rx="1.2" opacity="0.92"/>
+  ${mainland}
+  ${islands}
+  <path d="${scs.dashSvgPath}" fill="none" stroke="#${scsColors.dash}" stroke-width="1.1" stroke-linecap="round" opacity="0.75"/>
+</svg>`;
+writeFileSync("/opt/cursor/artifacts/screenshots/map-render.svg", svg);
+writeFileSync(
+  "/tmp/map-render.html",
+  `<!doctype html><html><body style="margin:0;background:#${theme.slideBg};display:flex;justify-content:center;padding:20px">${svg}</body></html>`,
+);
+console.log({
+  ratio: +(p.mapRect.w / p.mapRect.h).toFixed(3),
+  mainland: scs.mainland.length,
+  islands: scs.islands.length,
+  dashes: scs.dashes.length,
+  scsColors,
+});
