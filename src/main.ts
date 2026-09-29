@@ -22,13 +22,13 @@ function uid(prefix = "f"): string {
 }
 
 function defaultFields(): DataField[] {
-  return [{ id: uid(), key: "重发授权", value: "" }];
+  return [{ id: uid(), key: "交互数量", value: "" }];
 }
 
 function createInitialConfig(): AppConfig {
   const preset: SlideSizePreset = "16:9";
   const size = SIZE_PRESETS[preset];
-  // 默认数据：重发授权（江苏 / 浙江 / 福建）
+  // 默认数据：交互数量（江苏 / 浙江 / 福建）
   const defaults = ["320000", "330000", "350000"];
   const sample: Record<string, string> = {
     "320000": "31081",
@@ -43,13 +43,13 @@ function createInitialConfig(): AppConfig {
       adcode,
       name: meta.name,
       title: meta.name.replace(/省$/, ""),
-      fields: [{ id: uid(), key: "重发授权", value: sample[adcode] ?? "" }],
+      fields: [{ id: uid(), key: "交互数量", value: sample[adcode] ?? "" }],
     };
   }
 
   return {
     size: { preset, widthIn: size.widthIn, heightIn: size.heightIn },
-    title: "重发授权区域分布",
+    title: "交互数量区域分布",
     selectedOrder: defaults.filter((c) => tips[c]),
     tips,
     theme: { ...DEFAULT_THEME },
