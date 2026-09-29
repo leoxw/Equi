@@ -394,6 +394,25 @@ body::before {
   animation: pulseHot 1.6s ease-in-out infinite;
 }
 
+.scs-frame {
+  fill: rgba(7, 20, 28, 0.55);
+  stroke: #2e5a6e;
+  stroke-width: 1.1;
+}
+
+.scs-island {
+  fill: #1a3a4a;
+  stroke: #2e5a6e;
+  stroke-width: 0.4;
+}
+
+.scs-dash {
+  fill: none;
+  stroke: #99f6e4;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
 .pv-callout {
   background: rgba(15, 28, 36, 0.92);
   border: 1px solid rgba(45, 212, 191, 0.65);

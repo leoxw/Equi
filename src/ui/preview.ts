@@ -7,7 +7,7 @@ export function renderPreview(
   projection: MapProjection,
   config: AppConfig,
 ): void {
-  const { viewBox } = projection;
+  const { viewBox, scsInset } = projection;
   const selected = new Set(config.selectedOrder);
 
   const paths = projection.provinces
@@ -17,6 +17,10 @@ export function renderPreview(
         <title>${p.name}</title>
       </path>`;
     })
+    .join("");
+
+  const islandPaths = scsInset.islands
+    .map((isle) => `<path class="scs-island" d="${isle.svgPath}" />`)
     .join("");
 
   const markers = config.selectedOrder
@@ -31,7 +35,6 @@ export function renderPreview(
         index,
         config.selectedOrder.length,
       );
-      // Map callout inch position into svg space roughly on the right.
       const sx =
         viewBox.minX +
         viewBox.width * 0.72 +
@@ -72,6 +75,18 @@ export function renderPreview(
       </defs>
       <rect x="${viewBox.minX}" y="${viewBox.minY}" width="${viewBox.width}" height="${viewBox.height}" fill="url(#sea)"/>
       <g class="provinces">${paths}</g>
+      <g class="scs-inset">
+        <rect
+          class="scs-frame"
+          x="${scsInset.svgBox.x}"
+          y="${scsInset.svgBox.y}"
+          width="${scsInset.svgBox.w}"
+          height="${scsInset.svgBox.h}"
+          rx="1.5"
+        />
+        ${islandPaths}
+        <path class="scs-dash" d="${scsInset.dashSvgPath}" />
+      </g>
       ${markers}
     </svg>
   `;

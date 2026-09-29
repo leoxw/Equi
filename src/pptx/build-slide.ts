@@ -74,6 +74,49 @@ export async function buildPptxBlob(
     });
   }
 
+  // South China Sea inset (南海小图)
+  const scs = projection.scsInset;
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: scs.box.x,
+    y: scs.box.y,
+    w: scs.box.w,
+    h: scs.box.h,
+    fill: { color: hex(config.theme.slideBg), transparency: 20 },
+    line: { color: hex(config.theme.mapStroke), width: 1 },
+    rectRadius: 0.04,
+    objectName: "scs_frame",
+  });
+
+  for (const [i, isle] of scs.islands.entries()) {
+    slide.addShape("custGeom" as PptxGenJS.ShapeType, {
+      x: isle.box.x,
+      y: isle.box.y,
+      w: isle.box.w,
+      h: isle.box.h,
+      fill: { color: hex(config.theme.mapFill) },
+      line: { color: hex(config.theme.mapStroke), width: 0.5 },
+      points: isle.points as PptxGenJS.ShapeProps["points"],
+      objectName: `scs_island_${i}`,
+    });
+  }
+
+  for (const [i, d] of scs.dashes.entries()) {
+    const x = Math.min(d.x1, d.x2);
+    const y = Math.min(d.y1, d.y2);
+    const w = Math.abs(d.x2 - d.x1) || 0.01;
+    const h = Math.abs(d.y2 - d.y1) || 0.01;
+    slide.addShape(pptx.ShapeType.line, {
+      x,
+      y,
+      w,
+      h,
+      flipH: d.x2 < d.x1,
+      flipV: d.y2 < d.y1,
+      line: { color: hex(config.theme.highlightStroke), width: 1.25 },
+      objectName: `scs_dash_${i}`,
+    });
+  }
+
   config.selectedOrder.forEach((adcode, index) => {
     const tip = config.tips[adcode];
     const prov = projection.provinces.find((p) => p.adcode === adcode);
