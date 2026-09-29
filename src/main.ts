@@ -2,6 +2,7 @@ import "./styles.css";
 import chinaGeo from "./map/china-provinces.json";
 import type { FeatureCollection } from "geojson";
 import {
+  DEFAULT_STROKE_WIDTHS,
   DEFAULT_THEME,
   SIZE_PRESETS,
   type AppConfig,
@@ -59,6 +60,7 @@ function createInitialConfig(): AppConfig {
     selectedOrder: defaults.filter((c) => tips[c]),
     tips,
     theme: { ...DEFAULT_THEME },
+    strokeWidths: { ...DEFAULT_STROKE_WIDTHS },
   };
 }
 
@@ -137,6 +139,14 @@ function renderConfig(): void {
     </div>
 
     <div class="field">
+      <label>边界粗细（pt）</label>
+      <div class="width-grid">
+        ${widthField("map", "普通省界", state.strokeWidths.map)}
+        ${widthField("highlight", "高亮省界", state.strokeWidths.highlight)}
+      </div>
+    </div>
+
+    <div class="field">
       <label>选择高亮省份</label>
       <input class="search-box" id="prov-search" type="text" placeholder="搜索省份…" value="${escapeAttr(searchQuery)}" />
       <div class="province-list" id="province-list"></div>
@@ -160,6 +170,13 @@ function renderConfig(): void {
 
 function colorField(key: string, label: string, value: string): string {
   return `<label class="color-field">${label}<input type="color" data-theme="${key}" value="#${value}" /></label>`;
+}
+
+function widthField(key: "map" | "highlight", label: string, value: number): string {
+  return `<label class="width-field">
+    <span class="width-label">${label}<strong data-width-val="${key}">${value.toFixed(2)}</strong></span>
+    <input type="range" min="0.25" max="4" step="0.05" data-stroke-width="${key}" value="${value}" />
+  </label>`;
 }
 
 function renderProvinceList(): void {
@@ -335,6 +352,19 @@ function bindConfigEvents(): void {
       const key = input.dataset.theme as keyof typeof state.theme;
       state.theme[key] = input.value.replace("#", "").toUpperCase();
       applyThemeToCss();
+      refreshPreview();
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("change", apply);
+  });
+
+  document.querySelectorAll<HTMLInputElement>("input[data-stroke-width]").forEach((input) => {
+    const apply = () => {
+      const key = input.dataset.strokeWidth as "map" | "highlight";
+      const val = Math.min(4, Math.max(0.25, Number(input.value) || DEFAULT_STROKE_WIDTHS[key]));
+      state.strokeWidths[key] = val;
+      const label = document.querySelector<HTMLElement>(`[data-width-val="${key}"]`);
+      if (label) label.textContent = val.toFixed(2);
       refreshPreview();
     };
     input.addEventListener("input", apply);

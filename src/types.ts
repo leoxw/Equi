@@ -30,12 +30,19 @@ export interface ThemeColors {
   slideBg: string;
 }
 
+/** Province border widths in PowerPoint points (also drives SVG preview). */
+export interface StrokeWidths {
+  map: number;
+  highlight: number;
+}
+
 export interface AppConfig {
   size: SlideSize;
   title: string;
   selectedOrder: string[];
   tips: Record<string, ProvinceTip>;
   theme: ThemeColors;
+  strokeWidths: StrokeWidths;
 }
 
 export type GeomPoints = Array<
@@ -94,6 +101,11 @@ export const DEFAULT_THEME: ThemeColors = {
   calloutText: "E8F4F2",
   calloutAccent: "2DD4BF",
   slideBg: "071018",
+};
+
+export const DEFAULT_STROKE_WIDTHS: StrokeWidths = {
+  map: 0.75,
+  highlight: 1.25,
 };
 
 export const SIZE_PRESETS: Record<

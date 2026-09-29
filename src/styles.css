@@ -315,6 +315,41 @@ body::before {
   cursor: pointer;
 }
 
+.width-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.width-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.width-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.width-label strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.width-field input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .actions {
   display: flex;
   flex-direction: column;

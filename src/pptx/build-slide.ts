@@ -59,7 +59,7 @@ export async function buildPptxBlob(
       },
       line: {
         color: hex(isHi ? config.theme.highlightStroke : config.theme.mapStroke),
-        width: isHi ? 1.25 : 0.75,
+        width: isHi ? config.strokeWidths.highlight : config.strokeWidths.map,
       },
       points: prov.points as PptxGenJS.ShapeProps["points"],
       objectName: shapeName,

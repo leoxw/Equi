@@ -19,7 +19,8 @@ export function renderPreview(
       const hi = selected.has(p.adcode);
       const fill = `#${hi ? theme.highlight : theme.mapFill}`;
       const stroke = `#${hi ? theme.highlightStroke : theme.mapStroke}`;
-      return `<path data-adcode="${p.adcode}" class="prov${hi ? " is-hot" : ""}" fill="${fill}" stroke="${stroke}" stroke-width="${hi ? 1.1 : 0.6}" d="${p.svgPath}">
+      const strokeW = hi ? config.strokeWidths.highlight : config.strokeWidths.map;
+      return `<path data-adcode="${p.adcode}" class="prov${hi ? " is-hot" : ""}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}" d="${p.svgPath}">
         <title>${p.name}</title>
       </path>`;
     })

@@ -6,7 +6,7 @@ import chinaGeo from "../src/map/china-provinces.json" with { type: "json" };
 import { projectChinaMap } from "../src/map/project.ts";
 import { buildPptxBlob } from "../src/pptx/build-slide.ts";
 import { injectAnimations } from "../src/pptx/inject-animations.ts";
-import { DEFAULT_THEME } from "../src/types.ts";
+import { DEFAULT_STROKE_WIDTHS, DEFAULT_THEME } from "../src/types.ts";
 import type { AppConfig } from "../src/types.ts";
 import type { FeatureCollection } from "geojson";
 import JSZip from "jszip";
@@ -47,6 +47,7 @@ async function main() {
       },
     },
     theme: { ...DEFAULT_THEME },
+    strokeWidths: { ...DEFAULT_STROKE_WIDTHS },
   };
 
   const projection = projectChinaMap(geo, config.size.widthIn, config.size.heightIn);
