@@ -127,11 +127,12 @@ function renderConfig(): void {
       <label>主题色</label>
       <div class="color-grid">
         ${colorField("mapFill", "地图底色", state.theme.mapFill)}
-        ${colorField("highlight", "高亮色", state.theme.highlight)}
+        ${colorField("mapStroke", "省界线", state.theme.mapStroke)}
+        ${colorField("highlight", "高亮填充", state.theme.highlight)}
+        ${colorField("highlightStroke", "高亮边界", state.theme.highlightStroke)}
         ${colorField("calloutBg", "数据框底", state.theme.calloutBg)}
         ${colorField("calloutAccent", "数据框描边", state.theme.calloutAccent)}
         ${colorField("slideBg", "幻灯片底", state.theme.slideBg)}
-        ${colorField("mapStroke", "省界线", state.theme.mapStroke)}
       </div>
     </div>
 
