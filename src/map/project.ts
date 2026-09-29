@@ -28,20 +28,71 @@ const ALBERS_C =
 const ALBERS_RHO0 =
   Math.sqrt(ALBERS_C - 2 * ALBERS_N * Math.sin(ALBERS.phi0)) / ALBERS_N;
 
-/** Approximate 十段线 vertices for the South China Sea inset (lon, lat). */
-const TEN_DASH_LINE: Position[] = [
-  [122.1, 25.0],
-  [121.3, 22.6],
-  [119.8, 19.8],
-  [118.4, 16.2],
-  [117.0, 12.8],
-  [115.2, 9.6],
-  [112.8, 7.2],
-  [109.8, 6.4],
-  [108.4, 10.8],
-  [108.2, 14.8],
-  [108.8, 17.6],
+/**
+ * 十段线：标准分段（MultiLineString），每段即地图上的一条短虚线。
+ * 来源：公开 GeoJSON 十段线数据（WGS84）。
+ */
+const TEN_DASH_SEGMENTS: Position[][] = [
+  [
+    [109.51763678906526, 16.360467782665847],
+    [109.72339159230361, 16.05587198177934],
+    [109.8780414893003, 15.766823920473868],
+    [109.96506402665503, 15.526031073258686],
+    [109.98526818797363, 15.335615618596712],
+  ],
+  [
+    [110.48331454715199, 12.431407837351566],
+    [110.48240767589328, 12.085792287259398],
+    [110.45136562643113, 11.863835000833953],
+    [110.25652028695671, 11.393616070326182],
+  ],
+  [
+    [108.3388949586325, 7.26656318024262],
+    [108.30727608084116, 6.727803403200289],
+    [108.35631901989032, 6.112648053307836],
+  ],
+  [
+    [111.94112275674237, 3.553559321848772],
+    [112.40151782268552, 3.646409974664658],
+    [112.92104341055976, 3.845112027649191],
+  ],
+  [
+    [115.69079809651517, 7.29016984601141],
+    [116.4095482213759, 8.137962397303875],
+  ],
+  [
+    [118.63503455703679, 11.080904139262175],
+    [118.85587024190139, 11.457907321145406],
+    [119.10128629647166, 12.062751715859875],
+    [119.12181771101825, 12.135585760471585],
+  ],
+  [
+    [119.60808384544805, 18.143451232827125],
+    [119.91075760817219, 18.77194701315816],
+    [120.11918953031866, 19.117669954512905],
+  ],
+  [
+    [121.40591812413318, 20.8001943859176],
+    [122.12216430894797, 21.716094829922323],
+  ],
+  [
+    [122.80328441666389, 23.665545127578547],
+    [123.00481138309124, 24.74934291726869],
+  ],
+  [
+    [119.16836075308866, 15.107448879733406],
+    [119.16981236678279, 15.755038547478351],
+    [119.17823197590195, 16.265658015720753],
+  ],
 ];
+
+/** Standard 南海 inset geographic frame (GMT atlas style). */
+const SCS_FRAME_BOUNDS = {
+  minLon: 105,
+  maxLon: 123,
+  minLat: 3,
+  maxLat: 24,
+};
 
 function isRing(coords: Position[]): coords is Ring {
   return coords.length > 0 && Array.isArray(coords[0]) && typeof coords[0][0] === "number";
@@ -360,15 +411,19 @@ export function projectChinaMap(
     h: insetH,
   };
 
-  // Fit SCS content: islands + dash line.
-  const scsPts: Pt[] = [...scsRings.flat()];
-  for (const [lon, lat] of TEN_DASH_LINE) {
-    scsPts.push(projectScsLonLat(lon, lat));
+  // Fit SCS content into standard atlas frame 105–123°E / 3–24°N.
+  const scsPts: Pt[] = [
+    projectScsLonLat(SCS_FRAME_BOUNDS.minLon, SCS_FRAME_BOUNDS.minLat),
+    projectScsLonLat(SCS_FRAME_BOUNDS.maxLon, SCS_FRAME_BOUNDS.minLat),
+    projectScsLonLat(SCS_FRAME_BOUNDS.maxLon, SCS_FRAME_BOUNDS.maxLat),
+    projectScsLonLat(SCS_FRAME_BOUNDS.minLon, SCS_FRAME_BOUNDS.maxLat),
+  ];
+  for (const ring of scsRings) scsPts.push(...ring);
+  for (const seg of TEN_DASH_SEGMENTS) {
+    for (const [lon, lat] of seg) scsPts.push(projectScsLonLat(lon, lat));
   }
-  // Ensure a stable SCS frame even if island data is sparse.
-  scsPts.push(projectScsLonLat(105, 3), projectScsLonLat(125, 25));
   const scsBounds = bboxOfPoints(scsPts);
-  const scsFit = fitBounds(scsBounds, insetBox, 0.08);
+  const scsFit = fitBounds(scsBounds, insetBox, 0.06);
 
   const svgScale = 20;
   // Preview/SVG uses the full slide canvas so callouts and 南海 inset don't collide.
@@ -417,31 +472,27 @@ export function projectChinaMap(
     };
   });
 
-  // Ten-dash line as short strokes (atlas style).
-  const dashPts = TEN_DASH_LINE.map(([lon, lat]) =>
-    toSlide(projectScsLonLat(lon, lat), scsFit),
-  );
+  // Ten-dash line: each GeoJSON segment is one atlas dash stroke.
   const dashes: SouthChinaSeaInset["dashes"] = [];
   const dashSvg: string[] = [];
-  for (let i = 0; i < dashPts.length - 1; i++) {
-    const a = dashPts[i];
-    const b = dashPts[i + 1];
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const half = len * 0.28;
-    const x1 = mx - (dx / len) * half;
-    const y1 = my - (dy / len) * half;
-    const x2 = mx + (dx / len) * half;
-    const y2 = my + (dy / len) * half;
-    dashes.push({ x1, y1, x2, y2 });
-    const sx1 = (x1 - svgOrigin.x) * svgScale;
-    const sy1 = (y1 - svgOrigin.y) * svgScale;
-    const sx2 = (x2 - svgOrigin.x) * svgScale;
-    const sy2 = (y2 - svgOrigin.y) * svgScale;
-    dashSvg.push(`M ${sx1.toFixed(2)} ${sy1.toFixed(2)} L ${sx2.toFixed(2)} ${sy2.toFixed(2)}`);
+  for (const seg of TEN_DASH_SEGMENTS) {
+    if (seg.length < 2) continue;
+    const pts = seg.map(([lon, lat]) => toSlide(projectScsLonLat(lon, lat), scsFit));
+    for (let i = 0; i < pts.length - 1; i++) {
+      dashes.push({
+        x1: pts[i].x,
+        y1: pts[i].y,
+        x2: pts[i + 1].x,
+        y2: pts[i + 1].y,
+      });
+    }
+    const parts: string[] = [];
+    pts.forEach((p, i) => {
+      const sx = (p.x - svgOrigin.x) * svgScale;
+      const sy = (p.y - svgOrigin.y) * svgScale;
+      parts.push(`${i === 0 ? "M" : "L"} ${sx.toFixed(2)} ${sy.toFixed(2)}`);
+    });
+    dashSvg.push(parts.join(" "));
   }
 
   const scsInset: SouthChinaSeaInset = {

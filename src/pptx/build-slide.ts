@@ -2,6 +2,7 @@ import type { AppConfig, MapProjection, ProvinceTip } from "../types";
 import { shortProvinceName } from "../types";
 import PptxGenJS from "pptxgenjs";
 import { placeCallout } from "../map/project";
+import { softScsColors } from "../ui/colors";
 
 export interface BuiltSlideMeta {
   provinceShapeNames: Array<{ adcode: string; shapeName: string }>;
@@ -74,15 +75,16 @@ export async function buildPptxBlob(
     });
   }
 
-  // South China Sea inset (南海小图)
+  // South China Sea inset — soft colors so it stays understated.
   const scs = projection.scsInset;
+  const scsColors = softScsColors(config.theme);
   slide.addShape(pptx.ShapeType.roundRect, {
     x: scs.box.x,
     y: scs.box.y,
     w: scs.box.w,
     h: scs.box.h,
-    fill: { color: hex(config.theme.slideBg), transparency: 20 },
-    line: { color: hex(config.theme.mapStroke), width: 1 },
+    fill: { color: hex(scsColors.frameFill) },
+    line: { color: hex(scsColors.frameStroke), width: 0.55 },
     rectRadius: 0.04,
     objectName: "scs_frame",
   });
@@ -93,8 +95,8 @@ export async function buildPptxBlob(
       y: isle.box.y,
       w: isle.box.w,
       h: isle.box.h,
-      fill: { color: hex(config.theme.mapFill) },
-      line: { color: hex(config.theme.mapStroke), width: 0.5 },
+      fill: { color: hex(scsColors.island) },
+      line: { color: hex(scsColors.islandStroke), width: 0.4 },
       points: isle.points as PptxGenJS.ShapeProps["points"],
       objectName: `scs_island_${i}`,
     });
@@ -112,7 +114,7 @@ export async function buildPptxBlob(
       h,
       flipH: d.x2 < d.x1,
       flipV: d.y2 < d.y1,
-      line: { color: hex(config.theme.highlightStroke), width: 1.25 },
+      line: { color: hex(scsColors.dash), width: 0.7 },
       objectName: `scs_dash_${i}`,
     });
   }
@@ -132,7 +134,6 @@ export async function buildPptxBlob(
     const shapeName = `callout_${adcode}`;
     calloutShapeNames.push({ adcode, shapeName });
 
-    // Background rounded rect
     slide.addShape(pptx.ShapeType.roundRect, {
       x: box.x,
       y: box.y,
@@ -151,7 +152,6 @@ export async function buildPptxBlob(
       },
     });
 
-    // Accent bar (same object group visually; separate shape for text layering)
     const textName = `callout_text_${adcode}`;
     calloutShapeNames.push({ adcode, shapeName: textName });
 

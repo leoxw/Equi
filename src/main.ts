@@ -330,12 +330,14 @@ function bindConfigEvents(): void {
   });
 
   document.querySelectorAll<HTMLInputElement>("input[data-theme]").forEach((input) => {
-    input.addEventListener("input", () => {
+    const apply = () => {
       const key = input.dataset.theme as keyof typeof state.theme;
       state.theme[key] = input.value.replace("#", "").toUpperCase();
       applyThemeToCss();
       refreshPreview();
-    });
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("change", apply);
   });
 
   document.querySelector<HTMLInputElement>("#prov-search")?.addEventListener("input", (e) => {
@@ -349,7 +351,15 @@ function bindConfigEvents(): void {
 }
 
 function applyThemeToCss(): void {
-  document.documentElement.style.setProperty("--hot", `#${state.theme.highlight}`);
+  const t = state.theme;
+  const root = document.documentElement.style;
+  root.setProperty("--hot", `#${t.highlight}`);
+  root.setProperty("--map-fill", `#${t.mapFill}`);
+  root.setProperty("--map-stroke", `#${t.mapStroke}`);
+  root.setProperty("--slide-bg", `#${t.slideBg}`);
+  root.setProperty("--callout-bg", `#${t.calloutBg}`);
+  root.setProperty("--callout-text", `#${t.calloutText}`);
+  root.setProperty("--callout-accent", `#${t.calloutAccent}`);
 }
 
 function refreshPreview(): void {
