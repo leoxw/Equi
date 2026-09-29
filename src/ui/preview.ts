@@ -9,6 +9,7 @@ export function renderPreview(
 ): void {
   const { viewBox, scsInset } = projection;
   const selected = new Set(config.selectedOrder);
+  const svgScale = viewBox.width / config.size.widthIn;
 
   const paths = projection.provinces
     .map((p) => {
@@ -35,13 +36,10 @@ export function renderPreview(
         index,
         config.selectedOrder.length,
       );
-      const sx =
-        viewBox.minX +
-        viewBox.width * 0.72 +
-        ((box.x / config.size.widthIn) * 0.05 - 0.02) * viewBox.width;
-      const sy =
-        viewBox.minY +
-        viewBox.height * (0.12 + (index / Math.max(config.selectedOrder.length, 1)) * 0.7);
+      const sx = box.x * svgScale;
+      const sy = box.y * svgScale;
+      const sw = box.w * svgScale;
+      const sh = box.h * svgScale;
       const fields = tip.fields
         .filter((f) => f.key.trim() || f.value.trim())
         .map(
@@ -49,7 +47,7 @@ export function renderPreview(
             `<div class="pv-row"><span>${escapeHtml(f.key || "指标")}</span><strong>${escapeHtml(f.value || "—")}</strong></div>`,
         )
         .join("");
-      return `<foreignObject x="${sx}" y="${sy}" width="${viewBox.width * 0.26}" height="${viewBox.height * 0.18}" class="pv-callout-fo">
+      return `<foreignObject x="${sx}" y="${sy}" width="${sw}" height="${sh}" class="pv-callout-fo">
         <div xmlns="http://www.w3.org/1999/xhtml" class="pv-callout">
           <div class="pv-title">${escapeHtml(tip.title || shortProvinceName(tip.name))}</div>
           ${fields}

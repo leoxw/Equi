@@ -371,23 +371,14 @@ export function projectChinaMap(
   const scsFit = fitBounds(scsBounds, insetBox, 0.08);
 
   const svgScale = 20;
-  const contentLeft = Math.min(mainFit.originX, insetBox.x);
-  const contentTop = Math.min(mainFit.originY, insetBox.y);
-  const contentRight = Math.max(
-    mainFit.originX + (bounds.maxX - bounds.minX) * mainFit.scale,
-    insetBox.x + insetBox.w,
-  );
-  const contentBottom = Math.max(
-    mainFit.originY + (bounds.maxY - bounds.minY) * mainFit.scale,
-    insetBox.y + insetBox.h,
-  );
-  const svgOrigin = { x: contentLeft, y: contentTop };
-  const vbPad = 10;
+  // Preview/SVG uses the full slide canvas so callouts and 南海 inset don't collide.
+  const svgOrigin = { x: 0, y: 0 };
+  const vbPad = 0;
   const viewBox = {
-    minX: -vbPad,
-    minY: -vbPad,
-    width: (contentRight - contentLeft) * svgScale + vbPad * 2,
-    height: (contentBottom - contentTop) * svgScale + vbPad * 2,
+    minX: vbPad,
+    minY: vbPad,
+    width: slideW * svgScale,
+    height: slideH * svgScale,
   };
 
   const provinces: ProjectedProvince[] = workings.map((w) => {

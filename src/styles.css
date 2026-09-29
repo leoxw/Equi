@@ -422,6 +422,9 @@ body::before {
   font-family: var(--font-body);
   font-size: 11px;
   line-height: 1.35;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
   animation: fadeIn 0.4s ease both;
 }
