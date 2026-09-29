@@ -58,7 +58,7 @@ export function renderPreview(
         .join("");
       return `<foreignObject x="${sx}" y="${sy}" width="${sw}" height="${sh}" class="pv-callout-fo">
         <div xmlns="http://www.w3.org/1999/xhtml" class="pv-callout" style="background:#${theme.calloutBg};border-color:#${theme.calloutAccent};color:#${theme.calloutText}">
-          <div class="pv-title" style="color:#${theme.highlightStroke}">${escapeHtml(tip.title || shortProvinceName(tip.name))}</div>
+          <div class="pv-title" style="color:#${theme.highlight}">${escapeHtml(tip.title || shortProvinceName(tip.name))}</div>
           ${fields}
         </div>
       </foreignObject>`;

@@ -67,9 +67,9 @@ export async function buildPptxBlob(
         ? {
             type: "outer",
             color: hex(config.theme.highlight),
-            blur: 6,
+            blur: 4,
             offset: 0,
-            opacity: 0.35,
+            opacity: 0.22,
           }
         : undefined,
     });

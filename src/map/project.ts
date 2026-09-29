@@ -401,9 +401,9 @@ export function projectChinaMap(
   const mapRect = { x: marginX, y: marginY, w: mapW, h: mapH };
   const mainFit = fitBounds(bounds, mapRect, 0.03);
 
-  // South China Sea inset — vertical box at bottom-right of map area (matches common CN atlas layout).
-  const insetW = mapRect.w * 0.18;
-  const insetH = mapRect.h * 0.38;
+  // South China Sea inset — 75% of previous atlas size, bottom-right of map area.
+  const insetW = mapRect.w * 0.18 * 0.75;
+  const insetH = mapRect.h * 0.38 * 0.75;
   const insetBox = {
     x: mapRect.x + mapRect.w - insetW + mapRect.w * 0.01,
     y: mapRect.y + mapRect.h - insetH - mapRect.h * 0.01,

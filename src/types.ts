@@ -92,20 +92,21 @@ export interface MapProjection {
   scsInset: SouthChinaSeaInset;
 }
 
+/** Default palette: light atlas style (pale land + blue highlights). */
 export const DEFAULT_THEME: ThemeColors = {
-  mapFill: "1A3A4A",
-  mapStroke: "2E5A6E",
-  highlight: "2DD4BF",
-  highlightStroke: "99F6E4",
-  calloutBg: "0F1C24",
-  calloutText: "E8F4F2",
-  calloutAccent: "2DD4BF",
-  slideBg: "071018",
+  mapFill: "EEF2F6",
+  mapStroke: "C5CDD6",
+  highlight: "4B8FE8",
+  highlightStroke: "FFFFFF",
+  calloutBg: "FFFFFF",
+  calloutText: "1E293B",
+  calloutAccent: "4B8FE8",
+  slideBg: "FFFFFF",
 };
 
 export const DEFAULT_STROKE_WIDTHS: StrokeWidths = {
-  map: 0.75,
-  highlight: 1.25,
+  map: 0.6,
+  highlight: 1.75,
 };
 
 export const SIZE_PRESETS: Record<

@@ -36,11 +36,11 @@ export function softScsColors(theme: {
   calloutText: string;
 }): { frameFill: string; frameStroke: string; island: string; islandStroke: string; dash: string } {
   return {
-    frameFill: mixHex(theme.slideBg, theme.mapFill, 0.12),
-    frameStroke: mixHex(theme.slideBg, theme.mapStroke, 0.22),
-    island: mixHex(theme.slideBg, theme.mapFill, 0.38),
-    islandStroke: mixHex(theme.slideBg, theme.mapStroke, 0.2),
-    // Light muted gray — visible but not competing with highlighted provinces.
-    dash: mixHex(theme.slideBg, theme.calloutText, 0.38),
+    frameFill: mixHex(theme.slideBg, theme.mapFill, 0.35),
+    frameStroke: mixHex(theme.slideBg, theme.mapStroke, 0.55),
+    island: mixHex(theme.slideBg, theme.mapFill, 0.55),
+    islandStroke: mixHex(theme.slideBg, theme.mapStroke, 0.4),
+    // Soft gray dashes — readable on light atlas, understated on dark.
+    dash: mixHex(theme.slideBg, theme.calloutText, 0.32),
   };
 }
