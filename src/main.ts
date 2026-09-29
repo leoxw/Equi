@@ -22,21 +22,18 @@ function uid(prefix = "f"): string {
 }
 
 function defaultFields(): DataField[] {
-  return [
-    { id: uid(), key: "GDP", value: "" },
-    { id: uid(), key: "人口", value: "" },
-    { id: uid(), key: "要点", value: "" },
-  ];
+  return [{ id: uid(), key: "重发授权", value: "" }];
 }
 
 function createInitialConfig(): AppConfig {
   const preset: SlideSizePreset = "16:9";
   const size = SIZE_PRESETS[preset];
-  const defaults = ["320000", "330000", "440000"]; // 江苏 浙江 广东
-  const sample: Record<string, { gdp: string; pop: string }> = {
-    "320000": { gdp: "12.8 万亿", pop: "8500 万" },
-    "330000": { gdp: "8.3 万亿", pop: "6600 万" },
-    "440000": { gdp: "13.5 万亿", pop: "1.27 亿" },
+  // 默认数据：重发授权（江苏 / 浙江 / 福建）
+  const defaults = ["320000", "330000", "350000"];
+  const sample: Record<string, string> = {
+    "320000": "31081",
+    "330000": "19409",
+    "350000": "74838",
   };
   const tips: AppConfig["tips"] = {};
   for (const adcode of defaults) {
@@ -46,17 +43,13 @@ function createInitialConfig(): AppConfig {
       adcode,
       name: meta.name,
       title: meta.name.replace(/省$/, ""),
-      fields: [
-        { id: uid(), key: "GDP", value: sample[adcode]?.gdp ?? "" },
-        { id: uid(), key: "人口", value: sample[adcode]?.pop ?? "" },
-        { id: uid(), key: "要点", value: "区域核心增长极" },
-      ],
+      fields: [{ id: uid(), key: "重发授权", value: sample[adcode] ?? "" }],
     };
   }
 
   return {
     size: { preset, widthIn: size.widthIn, heightIn: size.heightIn },
-    title: "中国区域重点省份",
+    title: "重发授权区域分布",
     selectedOrder: defaults.filter((c) => tips[c]),
     tips,
     theme: { ...DEFAULT_THEME },

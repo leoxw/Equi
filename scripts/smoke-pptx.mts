@@ -16,34 +16,25 @@ async function main() {
   const config: AppConfig = {
     size: { preset: "16:9", widthIn: 13.333, heightIn: 7.5 },
     title: "测试区域重点省份",
-    selectedOrder: ["320000", "330000", "440000"],
+    selectedOrder: ["320000", "330000", "350000"],
     tips: {
       "320000": {
         adcode: "320000",
         name: "江苏省",
         title: "江苏",
-        fields: [
-          { id: "1", key: "GDP", value: "12.8 万亿" },
-          { id: "2", key: "人口", value: "8500 万" },
-        ],
+        fields: [{ id: "1", key: "重发授权", value: "31081" }],
       },
       "330000": {
         adcode: "330000",
         name: "浙江省",
         title: "浙江",
-        fields: [
-          { id: "1", key: "GDP", value: "8.3 万亿" },
-          { id: "2", key: "人口", value: "6600 万" },
-        ],
+        fields: [{ id: "1", key: "重发授权", value: "19409" }],
       },
-      "440000": {
-        adcode: "440000",
-        name: "广东省",
-        title: "广东",
-        fields: [
-          { id: "1", key: "GDP", value: "13.5 万亿" },
-          { id: "2", key: "人口", value: "1.27 亿" },
-        ],
+      "350000": {
+        adcode: "350000",
+        name: "福建省",
+        title: "福建",
+        fields: [{ id: "1", key: "重发授权", value: "74838" }],
       },
     },
     theme: { ...DEFAULT_THEME },
